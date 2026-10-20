@@ -84,7 +84,7 @@ It packages a stack that was first built by hand in `~/dev/infra/ml-kind-k8s`: k
 ### State and secrets
 - State lives in `~/.gitops-bakery/state.json`. It records the steps done and the generated endpoints.
 - Secrets live in `~/.gitops-bakery/secrets.json` with mode 600. They are generated randomly at first install and reused after that.
-- The cluster name is `gitops-bakery`. The registry host seen by nodes and pods is `gitops-bakery-control-plane:30001`.
+- **The cluster name is random,** chosen at first install the way Docker names containers. It is `<adjective>-<bread>`, for example `crusty-baguette`, and is stored in `state.json`. Every later command reads it from there. The registry host seen by nodes and pods is `<cluster>-control-plane:30001`. Only one cluster per machine is supported, since the host ports are fixed. *(Decided by the user, 2026-10-20.)*
 
 ### Ports
 - All ports are mapped through kind `extraPortMappings` with `listenAddress: 127.0.0.1`.

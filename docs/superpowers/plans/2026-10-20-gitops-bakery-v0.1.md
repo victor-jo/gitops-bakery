@@ -36,7 +36,7 @@
 | BuildKit | `moby/buildkit:v0.34.0-rootless` |
 
 - **Names:**
-  - Cluster `gitops-bakery`; registry host `gitops-bakery-control-plane:30001`.
+  - The cluster name is random (`<adjective>-<bread>`, e.g. `crusty-baguette`), generated once and kept in `state.json`. The registry host is `<cluster>-control-plane:30001`. Code never hardcodes either; it calls `clusterName()` and `registryHost()`.
   - In-cluster GitLab URL `http://gitlab-webservice-default.gitlab.svc.cluster.local:8181`.
   - GitLab host `localhost`.
 - **Host ports**, all on `127.0.0.1`: 80 GitLab, 30001 Harbor, 30002 Argo CD, 30004 Grafana, 30010–30019 apps.
@@ -70,7 +70,7 @@
 - Create:
   - `package.json`, `tsconfig.json`, `vitest.config.ts`, `.gitignore` (`node_modules`, `dist`, `.superpowers`)
   - `LICENSE` (Apache-2.0), `checklist.md`, `context-notes.md`
-- Create: `src/lib/paths.ts`, `src/lib/config.ts`, `src/lib/template.ts`, `src/lib/state.ts`, `src/lib/secrets.ts`, `src/lib/exec.ts`
+- Create: `src/lib/paths.ts`, `src/lib/names.ts`, `src/lib/config.ts`, `src/lib/template.ts`, `src/lib/state.ts`, `src/lib/secrets.ts`, `src/lib/exec.ts`
 - Test: `test/unit/template.test.ts`, `test/unit/state.test.ts`, `test/unit/secrets.test.ts`
 
 **Interfaces:**
@@ -79,14 +79,15 @@
     - `bakeryHome(): string` reads `GITOPS_BAKERY_HOME`, else `~/.gitops-bakery`.
     - `assetPath(...p: string[]): string` resolves from the package root.
   - `config.ts` holds the constants:
-    - `CLUSTER`, `REGISTRY`, `GITLAB_INTERNAL_URL`, `GITLAB_HOST_URL = "http://localhost"`
+    - `GITLAB_INTERNAL_URL`, `GITLAB_HOST_URL = "http://localhost"`
     - `PORTS = { gitlab: 80, harbor: 30001, argocd: 30002, grafana: 30004, appMin: 30010, appMax: 30019 }`
     - `VERSIONS` (the table above)
   - `template.ts`: `render(text: string, vars: Record<string, string | number>): string`.
   - `state.ts`:
-    - Type `State = { version: 1; steps: Record<string, { doneAt: string }>; apps: Record<string, AppRecord>; fastSync?: "webhook" | "ci-refresh" }`
+    - Type `State = { version: 1; clusterName: string; steps: Record<string, { doneAt: string }>; apps: Record<string, AppRecord>; fastSync?: "webhook" | "ci-refresh" }`
     - Type `AppRecord = { name: string; nodePort: number; createdAt: string }`
     - Functions `loadState(): State`, `saveState(s: State): void`, `markDone(id: string): void`, `isDone(id: string): boolean`
+  - `names.ts`: `randomClusterName(rand?: () => number): string`, `clusterName(): string` (from state; a new state gets a random one on first load), `registryHost(): string` (`${clusterName()}-control-plane:30001`)
   - `secrets.ts`:
     - Type `Secrets = { harborAdmin: string; grafanaAdmin: string; valkey: string; webhook: string; gitlabRootPassword?: string; gitlabPat?: string; harborRobotSecret?: string; argocdCiToken?: string; argocdAdmin?: string }`
     - Functions `loadOrCreateSecrets(): Secrets`, `updateSecrets(patch: Partial<Secrets>): Secrets`
@@ -104,6 +105,9 @@ expect(() => render("{{missing}}", {})).toThrow(/missing/);
 // state.test.ts (GITOPS_BAKERY_HOME = fresh tmpdir per test)
 expect(isDone("cluster")).toBe(false); markDone("cluster"); expect(isDone("cluster")).toBe(true);
 expect(loadState().version).toBe(1);
+expect(loadState().clusterName).toBe(loadState().clusterName);           // stable once created
+expect(randomClusterName()).toMatch(/^[a-z]+-[a-z]+$/);
+expect(registryHost()).toBe(`${clusterName()}-control-plane:30001`);
 // secrets.test.ts
 const a = loadOrCreateSecrets(); const b = loadOrCreateSecrets();
 expect(a).toEqual(b);
@@ -137,8 +141,8 @@ expect(updateSecrets({ gitlabPat: "x" }).gitlabPat).toBe("x");
     - Docker memory is at least 10 GiB (from `docker info --format '{{.MemTotal}}'`);
     - every port in `PORTS` is free.
   - Step `cluster` (see the `Step` type in Task 3):
-    1. Writes `<home>/certs.d/gitops-bakery-control-plane:30001/hosts.toml` from the asset.
-    2. Runs `kind create cluster --name gitops-bakery --image kindest/node:v1.37.0 --config -`.
+    1. Writes `<home>/certs.d/<registryHost()>/hosts.toml` from the asset.
+    2. Runs `kind create cluster --name <clusterName()> --image kindest/node:v1.37.0 --config -`.
     3. Verifies amd64 emulation. `kubectl run arch-check --rm -i --restart=Never --image=amd64/alpine:3.22 -- uname -m` must print `x86_64`. Otherwise it fails with `Harbor needs amd64 emulation (Rosetta); enable it in OrbStack/Docker Desktop settings`.
 
 - [ ] **Step 1: Write the failing tests.** Parse `kindConfig` output with `yaml` and assert:
@@ -149,7 +153,7 @@ expect(updateSecrets({ gitlabPat: "x" }).gitlabPat).toBe("x");
 - [ ] **Step 2: Run the tests and see them fail.** `npx vitest run test/unit/kind-config.test.ts test/unit/preflight.test.ts` → FAIL.
 - [ ] **Step 3: Implement.**
   - Port the kind config from `ml-kind-k8s/install.sh`.
-  - Port `hosts.toml` from `ml-kind-k8s/containerd/certs.d/*/hosts.toml`, with the server set to `http://gitops-bakery-control-plane:30001`.
+  - Port `hosts.toml` from `ml-kind-k8s/containerd/certs.d/*/hosts.toml`, with the server set to `http://{{registry}}`.
   - `isFree` default: try `net.createServer().listen(port, "127.0.0.1")`.
 - [ ] **Step 4: Run the tests and see them pass.** `npm test` → pass.
 - [ ] **Step 5: Commit.** `feat: generate kind config and add preflight checks`.
@@ -186,8 +190,8 @@ test("waitFor reports last state on timeout") // check returns {ok:false,state:"
 
 - [ ] **Step 2: Run the tests and see them fail.** `npx vitest run test/unit/runner.test.ts` → FAIL.
 - [ ] **Step 3: Implement** `runner.ts`, `wait.ts`, `log.ts` (step lines like `✓ Harbor (skipped)`), and `cli.ts` with commander.
-  - `uninstall` asks `Delete cluster gitops-bakery and ~/.gitops-bakery? [y/N]` unless `--yes`.
-  - It then runs `kind delete cluster --name gitops-bakery` and removes `bakeryHome()`. The Claude cleanup is wired in Task 10.
+  - `uninstall` asks `Delete cluster <clusterName()> and ~/.gitops-bakery? [y/N]` unless `--yes`.
+  - It then runs `kind delete cluster --name <clusterName()>` and removes `bakeryHome()`. The Claude cleanup is wired in Task 10.
 - [ ] **Step 4: Run the tests and see them pass.** `npm test` → pass. Also run `node dist/cli.js doctor`. Right now, with `ml-k8s` running, it should report ports 30001 and 30002 as busy. This checks a Review Focus item against reality.
 - [ ] **Step 5: Commit.** `feat: add idempotent step runner and CLI commands`.
 
@@ -390,7 +394,7 @@ test("waitFor reports last state on timeout") // check returns {ok:false,state:"
 - `createApp` does these steps in order:
   1. Validate the name and reject duplicates (`App "<n>" already exists`) before any API call.
   2. Allocate a port.
-  3. Create `apps/<name>-manifests` and commit the manifests rendered with `{name, registry, nodePort, image: REGISTRY + "/apps/" + name}`.
+  3. Create `apps/<name>-manifests` and commit the manifests rendered with `{name, registry: registryHost(), nodePort, image: registryHost() + "/apps/" + name}`.
   4. Create a project token on the manifests repo.
   5. Create `apps/<name>` and set raw variables:
      - `HARBOR_USER = robot$apps+ci`
@@ -483,7 +487,7 @@ test("tool outputs never contain secret values") // stub deps; run every handler
      - from the CI tag commit to the new version answering, which must be under 60 s;
      - from the source commit to the new version answering, which is only recorded.
   6. Assert `curl -s -o /dev/null -w '%{http_code}' http://localhost/users/sign_in` returns `200`, with no sudo involved.
-  7. Run `node dist/cli.js uninstall --yes`. Then assert that `kind get clusters` has no `gitops-bakery`, that `claude mcp list` has no `gitops-bakery`, and that `~/.claude/skills/gitops-bakery` is absent.
+  7. Run `node dist/cli.js uninstall --yes`. Then assert that `kind get clusters` no longer lists the cluster name recorded before uninstall, that `claude mcp list` has no `gitops-bakery`, and that `~/.claude/skills/gitops-bakery` is absent.
 - [ ] **Step 3: Run it.** `bash test/e2e/install.e2e.sh 2>&1 | tee .superpowers/e2e.log` → exits 0. On failure, use superpowers:systematic-debugging. Read the step's raw error, fix the code with a unit test where one fits, and rerun from `install` (idempotency is part of the test).
 - [ ] **Step 4: Record and commit.** Record the measured times, the `docker stats` memory per node and every trap hit in `context-notes.md`. Commit as `test: add end-to-end install script`.
 
