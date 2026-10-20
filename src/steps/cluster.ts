@@ -26,9 +26,13 @@ async function clusterExists(name: string): Promise<boolean> {
   return stdout.split("\n").includes(name);
 }
 
+// The linux/amd64 manifest of alpine:3.22, pinned by digest: Harbor ships single-arch amd64 manifests,
+// and a plain manifest is pulled as-is while a multi-arch tag fails on arm64 nodes
+export const AMD64_PROBE_IMAGE = "alpine@sha256:3e9b4b680bfc9fb5269227cffbd6d42be39fbf7c0b908123913864aa4447e764";
+
 async function checkAmd64Emulation(): Promise<void> {
   const out = await kubectl(["run", "arch-check", "--rm", "-i", "--restart=Never", "--quiet",
-    "--image=amd64/alpine:3.22", "--", "uname", "-m"]).catch((e: Error) => e.message);
+    `--image=${AMD64_PROBE_IMAGE}`, "--", "uname", "-m"]).catch((e: Error) => e.message);
   if (!out.includes("x86_64"))
     throw new Error(`Harbor needs amd64 emulation (Rosetta); enable it in OrbStack/Docker Desktop settings. Got: ${out.trim()}`);
 }

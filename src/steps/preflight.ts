@@ -15,10 +15,16 @@ export function labPorts(): number[] {
   return ports;
 }
 
+// macOS refuses unprivileged binds below 1024 with EACCES, yet Docker can still publish them,
+// so only "address in use" means another process holds the port
+export function bindErrorMeansBusy(code: string | undefined): boolean {
+  return code === "EADDRINUSE";
+}
+
 export function isPortFree(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const server = createServer();
-    server.once("error", () => resolve(false));
+    server.once("error", (e: NodeJS.ErrnoException) => resolve(!bindErrorMeansBusy(e.code)));
     server.listen(port, "127.0.0.1", () => server.close(() => resolve(true)));
   });
 }

@@ -4,7 +4,7 @@ Plan: `docs/superpowers/plans/2026-10-20-gitops-bakery-v0.1.md`
 
 - [x] 1. Scaffold and core libraries
 - [x] 2. kind config, preflight, cluster step
-- [ ] 3. Step runner and CLI
+- [x] 3. Step runner and CLI
 - [ ] 4. Harbor and Argo CD
 - [ ] 5. CloudNativePG, Valkey, Garage
 - [ ] 6. GitLab and the GitLab client
