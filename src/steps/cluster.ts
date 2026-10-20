@@ -30,9 +30,15 @@ async function clusterExists(name: string): Promise<boolean> {
 // and a plain manifest is pulled as-is while a multi-arch tag fails on arm64 nodes
 export const AMD64_PROBE_IMAGE = "alpine@sha256:3e9b4b680bfc9fb5269227cffbd6d42be39fbf7c0b908123913864aa4447e764";
 
-async function checkAmd64Emulation(): Promise<void> {
-  const out = await kubectl(["run", "arch-check", "--rm", "-i", "--restart=Never", "--quiet",
-    `--image=${AMD64_PROBE_IMAGE}`, "--", "uname", "-m"]).catch((e: Error) => e.message);
+// Attaching with `kubectl run -i` races with a pod that exits in milliseconds and can return nothing,
+// so the probe runs detached, waits for it to finish and reads its logs
+export async function checkAmd64Emulation(kube: (args: string[]) => Promise<string> = kubectl): Promise<void> {
+  const pod = "arch-check";
+  await kube(["delete", "pod", pod, "--ignore-not-found", "--wait=true"]);
+  await kube(["run", pod, "--restart=Never", `--image=${AMD64_PROBE_IMAGE}`, "--", "uname", "-m"]);
+  await kube(["wait", `pod/${pod}`, "--for=jsonpath={.status.phase}=Succeeded", "--timeout=180s"]).catch(() => undefined);
+  const out = await kube(["logs", pod]).catch((e: Error) => e.message);
+  await kube(["delete", "pod", pod, "--ignore-not-found"]);
   if (!out.includes("x86_64"))
     throw new Error(`Harbor needs amd64 emulation (Rosetta); enable it in OrbStack/Docker Desktop settings. Got: ${out.trim()}`);
 }
@@ -49,6 +55,7 @@ export const clusterStep: Step = {
         input: kindConfig({ certsDir: certsDir(), workers: 3 }),
       });
     }
+    await kubectl(["wait", "--for=condition=Ready", "nodes", "--all", "--timeout=180s"]);
     await checkAmd64Emulation();
   },
 };
