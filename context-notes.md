@@ -35,3 +35,4 @@ Decisions and raw errors, appended as the work goes. The design lives in `docs/s
   - GitLab `/users/sign_in` returned 200 with no sudo.
   - Node memory was 1.54 + 1.43 + 3.36 + 1.49 ≈ 7.8 GiB.
   - `uninstall --yes` removed the cluster, the MCP entry, the skill and `~/.gitops-bakery`.
+- **Final review fixes, then E2E rerun (cluster `rustic-naan`): PASSED.** Install took 659 s, create to serving 94 s, source to live 75 s, tag to live 14 s, and memory was about 8.0 GiB. The user's lab was installed afterwards as `toasty-scone`. On it, `doctor` reports ready, and the Grafana password appears 0 times in `devops/platform`. Login uses Secret `monitoring/grafana-admin`.
