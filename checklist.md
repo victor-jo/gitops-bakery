@@ -12,5 +12,5 @@ Plan: `docs/superpowers/plans/2026-10-20-gitops-bakery-v0.1.md`
 - [x] 8. GitOps bootstrap, monitoring, fast sync
 - [x] 9. App lifecycle and FastAPI template
 - [x] 10. MCP server, skill, Claude Code integration
-- [ ] 11. End-to-end install
+- [x] 11. End-to-end install
 - [ ] 12. Docs and publishing
