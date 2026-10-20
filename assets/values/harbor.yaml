@@ -1,0 +1,18 @@
+# Harbor on kind: plain HTTP on NodePort 30001, one registry name for host, nodes and pods
+expose:
+  type: nodePort
+  tls:
+    enabled: false
+  nodePort:
+    ports:
+      http:
+        nodePort: 30001
+
+# Token realm and push/pull URLs are built from this, so every client must resolve it
+externalURL: http://{{registry}}
+
+harborAdminPassword: "{{harborAdmin}}"
+
+# Vulnerability scanning is out of scope for the lab and is heavy under amd64 emulation
+trivy:
+  enabled: false

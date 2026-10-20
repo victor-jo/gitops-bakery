@@ -9,3 +9,12 @@ export function kubeContext(): string {
 export async function kubectl(args: string[], input?: string): Promise<string> {
   return (await run("kubectl", ["--context", kubeContext(), ...args], { input })).stdout;
 }
+
+export async function applyYaml(yaml: string, opts: { serverSide?: boolean } = {}): Promise<void> {
+  await kubectl(["apply", ...(opts.serverSide ? ["--server-side", "--force-conflicts"] : []), "-f", "-"], yaml);
+}
+
+export async function secretValue(ns: string, name: string, key: string): Promise<string> {
+  const b64 = await kubectl(["-n", ns, "get", "secret", name, "-o", `jsonpath={.data.${key.replace(/\./g, "\\.")}}`]);
+  return Buffer.from(b64.trim(), "base64").toString("utf8");
+}

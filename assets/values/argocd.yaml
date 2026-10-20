@@ -1,0 +1,12 @@
+# Argo CD on kind: UI over plain HTTP on NodePort 30002, no SSO
+configs:
+  params:
+    server.insecure: true
+
+server:
+  service:
+    type: NodePort
+    nodePortHttp: 30002
+
+dex:
+  enabled: false
