@@ -1,0 +1,16 @@
+# Garage as GitLab's S3 object storage, shrunk to one node for kind
+garage:
+  replicationFactor: "1"
+
+deployment:
+  replicaCount: 1
+
+# The chart default dxflrs/amd64_garage is amd64-only; this tag is multi-arch
+image:
+  repository: dxflrs/garage
+
+persistence:
+  meta:
+    size: 250Mi
+  data:
+    size: 5Gi

@@ -1,0 +1,11 @@
+# Valkey as GitLab's external Redis; credentials land in Secret valkey-auth
+dataStorage:
+  enabled: true
+  requestedSize: 2Gi
+
+auth:
+  enabled: true
+  aclUsers:
+    default:
+      permissions: "~* &* +@all"
+      password: "{{valkey}}"
