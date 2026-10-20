@@ -1,7 +1,15 @@
-# Argo CD on kind: UI over plain HTTP on NodePort 30002, no SSO
+# Argo CD on kind: UI over plain HTTP on NodePort 30002, no SSO, plus a narrow "ci" account for refresh calls
 configs:
   params:
     server.insecure: true
+  cm:
+    # GitLab's webhooks carry http://localhost URLs that never match the in-cluster repoURLs,
+    # so CI asks Argo CD to refresh its app directly with this API-key-only account
+    accounts.ci: apiKey
+  rbac:
+    policy.csv: |
+      p, role:ci, applications, get, */*, allow
+      g, ci, role:ci
 
 server:
   service:

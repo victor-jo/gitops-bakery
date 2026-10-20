@@ -1,0 +1,61 @@
+// Seeds devops/platform and devops/service in GitLab and applies the two root Applications
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
+import { ARGOCD_HOST_URL, GITLAB_HOST_URL, GITLAB_INTERNAL_URL } from "../lib/config.js";
+import { ArgoCD } from "../lib/argocd.js";
+import { GitLab } from "../lib/gitlab.js";
+import { applyYaml } from "../lib/kube.js";
+import { assetPath } from "../lib/paths.js";
+import { render } from "../lib/template.js";
+import { waitFor } from "../lib/wait.js";
+import type { Step } from "./types.js";
+
+export type RepoFile = { path: string; content: string };
+
+function walk(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const full = join(dir, name);
+    return statSync(full).isDirectory() ? walk(full) : [full];
+  });
+}
+
+// Grafana dashboards use {{label}} legends of their own, so JSON files are committed verbatim
+export function gitopsFiles(repo: "platform" | "service", vars: Record<string, string>): RepoFile[] {
+  const root = assetPath("assets", "gitops", repo);
+  return walk(root)
+    .sort()
+    .map((full) => {
+      const raw = readFileSync(full, "utf8");
+      return { path: relative(root, full), content: full.endsWith(".json") ? raw : render(raw, vars) };
+    });
+}
+
+export const ROOT_APPS = ["platform-root", "service-root"];
+
+export async function argocdAdmin(password: string): Promise<ArgoCD> {
+  return ArgoCD.login(ARGOCD_HOST_URL, "admin", password);
+}
+
+export async function waitHealthy(argocd: ArgoCD, names: string[], timeoutMs: number): Promise<void> {
+  for (const name of names) {
+    await waitFor(`Argo CD application ${name}`, async () => {
+      const s = await argocd.getApp(name);
+      return { ok: s?.sync === "Synced" && s.health === "Healthy", state: s ? `${s.sync}/${s.health}` : "missing" };
+    }, timeoutMs);
+  }
+}
+
+export const bootstrapStep: Step = {
+  id: "bootstrap",
+  title: "GitOps repos and monitoring",
+  async run(ctx) {
+    const gitlab = new GitLab(GITLAB_HOST_URL, ctx.secrets.gitlabPat!);
+    const vars = { gitlabUrl: GITLAB_INTERNAL_URL, grafanaAdmin: ctx.secrets.grafanaAdmin };
+    for (const repo of ["platform", "service"] as const) {
+      const project = await gitlab.ensureProject("devops", repo);
+      await gitlab.commitFiles(project.pathWithNamespace, gitopsFiles(repo, vars), "Seed by gitops-bakery");
+      await applyYaml(gitopsFiles(repo, vars).find((f) => f.path === "root.yaml")!.content);
+    }
+    await waitHealthy(await argocdAdmin(ctx.secrets.argocdAdmin!), [...ROOT_APPS, "monitoring"], 15 * 60_000);
+  },
+};

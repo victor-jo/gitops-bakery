@@ -13,3 +13,13 @@ Decisions and raw errors, appended as the work goes. The design lives in `docs/s
 - **Trap: Garage buckets before layout.** Listing buckets to skip existing ones failed with `ListBuckets returned InternalError (500): Internal error: Layout not ready`. Before a layout is applied, `garage layout show` prints `Current cluster layout version: 0`. The step now applies the layout first, then lists buckets and checks the key. Rerunning the Garage step on a finished cluster succeeds with nothing to do.
 - **Task 6 live.** GitLab 19.5 came up and answered `http://localhost/-/readiness` and `/users/sign_in` (200) **without sudo**. Host port 80 goes through the kind mapping to NodePort 30080 on a `gitlab-host` Service. The chart has no setting to pin the webservice NodePort, so the installer copies the `gitlab-webservice-default` selector onto a Service it owns. The root API token is minted by `gitlab-rails runner` in the toolbox with `set_token`, then checked with `GET /api/v4/user`.
 - **Task 7 live.** An instance runner `gitops-bakery` is created with `POST /api/v4/user/runners` (a `glrt-` token in Secret `gitlab-runner/gitlab-runner-token`). It came online on the first try.
+- **Task 8 live.** `devops/platform` and `devops/service` were seeded through the API. `platform-root`, `service-root` and `monitoring` reached Synced/Healthy, and Grafana answers on 30004.
+- **Fast-sync spike (webhook does not work).**
+  - What was done: enabled `allow_local_requests_from_web_hooks_and_services`, added a hook on `devops/platform` to `http://argocd-server.argocd.svc.cluster.local/api/webhook`, then committed.
+  - Argo CD logged `Received push event repo: http://localhost/devops/platform, revision: main, touchedHead: true` and `Webhook handler completed in 1.264911ms`.
+  - It refreshed nothing: `platform-root` `reconciledAt` stayed `2026-10-20T07:38:52Z` for 22 s. The payload URL (`http://localhost/...`) never matches the in-cluster `repoURL`s.
+  - Decision: `ci-refresh` mode. The spike hook, file and setting were removed afterwards.
+- **ci account.**
+  - `accounts.ci: apiKey` with `p, role:ci, applications, get, */*, allow`.
+  - Its token can `GET …?refresh=normal` (200).
+  - It cannot delete (`permission denied: applications, delete, default/monitoring, sub: ci`, 403) or sync (403).

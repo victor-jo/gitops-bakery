@@ -1,0 +1,50 @@
+# kube-prometheus-stack sized for a kind laptop cluster: no Alertmanager, no persistence, short retention
+alertmanager:
+  enabled: false
+
+# kind binds these control-plane components to localhost, so their targets would always be down
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 1d
+    # Pick up ServiceMonitors from any namespace, not only ones labelled with this Helm release
+    serviceMonitorSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 1Gi
+
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+grafana:
+  adminPassword: "{{grafanaAdmin}}"
+  service:
+    type: NodePort
+    nodePort: 30004
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+  # Open straight onto the app requests dashboard, which the sidecar writes into its dashboards folder
+  grafana.ini:
+    dashboards:
+      default_home_dashboard_path: /tmp/dashboards/requests.json
+  sidecar:
+    datasources:
+      # Alertmanager is disabled, so its datasource would only point at a missing Service
+      alertmanager:
+        enabled: false

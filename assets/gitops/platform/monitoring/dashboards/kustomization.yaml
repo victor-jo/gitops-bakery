@@ -1,0 +1,12 @@
+# Packs the dashboard JSON into a ConfigMap that the Grafana sidecar loads by label
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+configMapGenerator:
+- name: app-requests-dashboard
+  files:
+  - requests.json
+  options:
+    disableNameSuffixHash: true
+    labels:
+      grafana_dashboard: "1"
