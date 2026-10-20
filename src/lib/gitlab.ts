@@ -100,6 +100,15 @@ export class GitLab {
     await this.call("PUT", "/application/settings", { [key]: value });
   }
 
+  async createInstanceRunner(description: string): Promise<string> {
+    const res = await this.call<{ token: string }>("POST", "/user/runners", { runner_type: "instance_type", description, run_untagged: true });
+    return res.data.token;
+  }
+
+  async onlineRunners(): Promise<{ description: string }[]> {
+    return (await this.call<{ description: string }[]>("GET", "/runners/all?status=online")).data;
+  }
+
   async currentUser(): Promise<{ username: string }> {
     return (await this.call<{ username: string }>("GET", "/user")).data;
   }

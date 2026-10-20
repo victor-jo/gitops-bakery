@@ -1,0 +1,22 @@
+# GitLab Runner with the Kubernetes executor; each CI job becomes a pod in the gitlab-runner namespace
+gitlabUrl: http://gitlab-webservice-default.gitlab.svc.cluster.local:8181
+
+rbac:
+  create: true
+
+runners:
+  secret: gitlab-runner-token
+  config: |
+    [[runners]]
+      # GitLab's own URL is http://localhost, which means "this pod" inside the cluster
+      clone_url = "http://gitlab-webservice-default.gitlab.svc.cluster.local:8181"
+      [runners.kubernetes]
+        namespace = "gitlab-runner"
+        image = "alpine:3.22"
+        # The helper image defaults to linux/amd64; the arch label here is what flips it to the host arch
+        [runners.kubernetes.node_selector]
+          "kubernetes.io/arch" = "{{arch}}"
+        # Rootless BuildKit needs to create user namespaces, which the default seccomp profile blocks
+        [runners.kubernetes.pod_security_context]
+          [runners.kubernetes.pod_security_context.seccomp_profile]
+            type = "Unconfined"
