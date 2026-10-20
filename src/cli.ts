@@ -12,6 +12,9 @@ import { bakeryHome } from "./lib/paths.js";
 import { loadOrCreateSecrets, secretsPath } from "./lib/secrets.js";
 import { ALL_STEPS } from "./steps/index.js";
 import { preflight } from "./steps/preflight.js";
+import { removeClaudeIntegration } from "./steps/claude.js";
+import { startMcpServer } from "./mcp/server.js";
+import { statusReport } from "./lib/status.js";
 import { runSteps } from "./steps/runner.js";
 
 const program = new Command()
@@ -42,21 +45,10 @@ program
   .command("status")
   .description("Show pod readiness per namespace and the lab URLs")
   .action(async () => {
-    console.log(`Cluster: ${clusterName()} (context ${kubeContext()})`);
-    const res = await run("kubectl", ["--context", kubeContext(), "get", "pods", "-A", "--no-headers"], { allowFail: true });
-    if (res.code !== 0) {
-      console.log("  cluster is not reachable");
-      return;
-    }
-    const byNs = new Map<string, { ready: number; total: number }>();
-    for (const line of res.stdout.trim().split("\n").filter(Boolean)) {
-      const [ns, , , status] = line.split(/\s+/);
-      const entry = byNs.get(ns) ?? { ready: 0, total: 0 };
-      entry.total++;
-      if (status === "Running" || status === "Completed") entry.ready++;
-      byNs.set(ns, entry);
-    }
-    for (const [ns, e] of byNs) console.log(`  ${ns.padEnd(20)} ${e.ready}/${e.total} running`);
+    const report = await statusReport();
+    console.log(`Cluster: ${report.cluster} (context ${kubeContext()})`);
+    if (!report.reachable) console.log("  cluster is not reachable");
+    for (const c of report.components) console.log(`  ${c.namespace.padEnd(20)} ${c.ready}/${c.total} running`);
     for (const [name, url] of ENDPOINTS) console.log(`  ${name.padEnd(8)} ${url}`);
   });
 
@@ -93,6 +85,7 @@ program
       if (answer.trim().toLowerCase() !== "y") return;
     }
     await run("kind", ["delete", "cluster", "--name", name]);
+    await removeClaudeIntegration();
     if (existsSync(bakeryHome())) rmSync(bakeryHome(), { recursive: true, force: true });
     console.log(`✓ Removed ${name}`);
   });
@@ -101,7 +94,7 @@ program
   .command("mcp")
   .description("Run the MCP server on stdio (used by Claude Code)")
   .action(async () => {
-    throw new Error("MCP server is not available yet");
+    await startMcpServer();
   });
 
 program.parseAsync().catch((e: Error) => {
