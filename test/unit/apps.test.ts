@@ -49,6 +49,8 @@ test("the CI template keeps the quoted sed line and refreshes Argo CD only when 
   expect(ci).toContain("git pull --rebase");
   expect(ci).toContain("/api/v1/applications/hello?refresh=normal");
   expect(ci).toContain('if [ -n "$ARGOCD_TOKEN" ]');
+  // The refresh only speeds things up; Argo CD still polls, so it must never fail the deploy job
+  expect(ci).toMatch(/refresh=normal" \|\| echo /);
 });
 
 function fakeDeps() {
@@ -61,8 +63,9 @@ function fakeDeps() {
     deleteFile: vi.fn(async () => {}),
   };
   const harbor = { deleteRepository: vi.fn(async () => {}) };
-  const deps = { gitlab, harbor, argocd: {}, secrets: { harborRobotSecret: "robot-secret", argocdCiToken: "ci-token" } } as unknown as AppDeps;
-  return { deps, gitlab, harbor };
+  const argocd = { refresh: vi.fn(async () => {}) };
+  const deps = { gitlab, harbor, argocd, secrets: { harborRobotSecret: "robot-secret", argocdCiToken: "ci-token" } } as unknown as AppDeps;
+  return { deps, gitlab, harbor, argocd };
 }
 
 test("createApp rejects a duplicate before touching GitLab", async () => {
@@ -86,6 +89,13 @@ test("createApp sets raw CI variables and records the app", async () => {
   ]);
   expect(gitlab.setVariable.mock.calls[0][2]).toBe("robot$apps+ci");
   expect(loadState().apps.hello.nodePort).toBe(30010);
+});
+
+test("createApp asks Argo CD to pick up the new Application right away", async () => {
+  saveState({ ...loadState(), fastSync: "ci-refresh" });
+  const { deps, argocd } = fakeDeps();
+  await createApp(deps, "hello", "fastapi");
+  expect(argocd.refresh).toHaveBeenCalledWith("service-root");
 });
 
 test("createApp rolls back both repos when a later step fails", async () => {

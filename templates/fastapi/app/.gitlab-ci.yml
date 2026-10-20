@@ -46,5 +46,6 @@ deploy:
     # Another pipeline may have pushed meanwhile; replay on top instead of failing
     - git pull --rebase origin main
     - git push origin HEAD:main
-    # GitLab webhooks carry http://localhost URLs Argo CD cannot match, so ask it to refresh directly
-    - 'if [ -n "$ARGOCD_TOKEN" ]; then wget -qO /dev/null --header "Authorization: Bearer $ARGOCD_TOKEN" "http://argocd-server.argocd.svc.cluster.local/api/v1/applications/{{name}}?refresh=normal"; fi'
+    # GitLab webhooks carry http://localhost URLs Argo CD cannot match, so ask it to refresh directly;
+    # this only speeds things up (Argo CD still polls every 3 minutes), so a failed call never fails the job
+    - 'if [ -n "$ARGOCD_TOKEN" ]; then wget -qO /dev/null --header "Authorization: Bearer $ARGOCD_TOKEN" "http://argocd-server.argocd.svc.cluster.local/api/v1/applications/{{name}}?refresh=normal" || echo "Argo CD refresh skipped; it will sync on its next poll"; fi'

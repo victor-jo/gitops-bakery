@@ -21,6 +21,7 @@ export type Template = "fastapi";
 export type TemplateVars = { name: string; registry: string; nodePort: number; image: string };
 
 const APPS_GROUP = "apps";
+const SERVICE_ROOT = "service-root";
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((n) => (statSync(join(dir, n)).isDirectory() ? walk(join(dir, n)) : [join(dir, n)]));
@@ -62,6 +63,8 @@ export async function createApp(deps: AppDeps, name: string, template: Template)
       [{ path: `apps/${name}.yaml`, content: asset("gitops/app-application.yaml.tmpl", { name, gitlabUrl: GITLAB_INTERNAL_URL }) }],
       `Deploy ${name}`,
     );
+    // service-root would otherwise notice the new Application only on its next 3-minute poll
+    await deps.argocd.refresh(SERVICE_ROOT);
   } catch (e) {
     await deleteApp(deps, name).catch(() => undefined);
     throw e;
@@ -103,6 +106,7 @@ export async function deleteApp(deps: AppDeps, name: string): Promise<void> {
   await deps.gitlab.deleteProject(`${APPS_GROUP}/${name}`);
   await deps.gitlab.deleteProject(`${APPS_GROUP}/${name}-manifests`);
   await deps.harbor.deleteRepository(HARBOR_APPS_PROJECT, name);
+  await deps.argocd.refresh(SERVICE_ROOT).catch(() => undefined);
   const s = loadState();
   delete s.apps[name];
   saveState(s);

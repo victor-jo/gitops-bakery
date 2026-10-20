@@ -32,7 +32,10 @@ function deps(): AppDeps {
       latestPipeline: vi.fn(async () => ({ id: 1, status: "success", webUrl: "http://localhost/p/1", jobs: [] })),
     },
     harbor: { listTags: vi.fn(async () => ["abc"]), deleteRepository: vi.fn(async () => {}) },
-    argocd: { getApp: vi.fn(async () => ({ sync: "Synced", health: "Healthy", revision: "r", reconciledAt: "" })) },
+    argocd: {
+      getApp: vi.fn(async () => ({ sync: "Synced", health: "Healthy", revision: "r", reconciledAt: "" })),
+      refresh: vi.fn(async () => {}),
+    },
   } as unknown as AppDeps;
 }
 
