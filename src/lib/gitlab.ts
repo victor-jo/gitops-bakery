@@ -92,8 +92,21 @@ export class GitLab {
     return { id: p.id, status: p.status, webUrl: p.web_url, jobs: jobs.map((j) => ({ name: j.name, status: j.status })) };
   }
 
+  // Group projects are only marked for deletion at first; the second call removes them for good so the path is reusable
   async deleteProject(project: string): Promise<void> {
-    await this.call("DELETE", `/projects/${enc(project)}`, undefined, [404]);
+    const first = await this.call("DELETE", `/projects/${enc(project)}`, undefined, [404]);
+    if (first.status === 404) return;
+    await this.call("DELETE", `/projects/${enc(project)}?permanently_remove=true&full_path=${enc(project)}`, undefined, [400, 404]);
+  }
+
+  async deleteFile(project: string, path: string, message: string, branch = "main"): Promise<void> {
+    const exists = await this.call("GET", `/projects/${enc(project)}/repository/files/${enc(path)}?ref=${branch}`, undefined, [404]);
+    if (exists.status === 404) return;
+    await this.call("POST", `/projects/${enc(project)}/repository/commits`, {
+      branch,
+      commit_message: message,
+      actions: [{ action: "delete", file_path: path }],
+    });
   }
 
   async setApplicationSetting(key: string, value: unknown): Promise<void> {

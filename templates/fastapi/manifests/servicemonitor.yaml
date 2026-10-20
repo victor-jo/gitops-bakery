@@ -1,0 +1,13 @@
+# Tells the Prometheus operator to scrape /metrics from every {{name}} pod behind the Service
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{name}}
+spec:
+  selector:
+    matchLabels:
+      app: {{name}}
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 15s

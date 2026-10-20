@@ -1,0 +1,50 @@
+# Test and build with rootless BuildKit, push to Harbor, bump the tag in {{name}}-manifests, then ask Argo CD to refresh
+stages: [test, build, deploy]
+
+variables:
+  IMAGE: {{image}}
+  MANIFEST_REPO: gitlab-webservice-default.gitlab.svc.cluster.local:8181/apps/{{name}}-manifests.git
+  # Rootless BuildKit cannot use the process sandbox inside an unprivileged pod
+  BUILDKITD_FLAGS: --oci-worker-no-process-sandbox
+
+.buildkit:
+  image:
+    name: moby/buildkit:v0.34.0-rootless
+    entrypoint: [""]
+
+test:
+  extends: .buildkit
+  stage: test
+  script:
+    - buildctl-daemonless.sh build --frontend dockerfile.v0 --local context=. --local dockerfile=. --opt target=test
+
+build:
+  extends: .buildkit
+  stage: build
+  script:
+    - mkdir -p ~/.docker
+    - AUTH=$(printf '%s:%s' "$HARBOR_USER" "$HARBOR_PASSWORD" | base64 | tr -d '\n')
+    - printf '{"auths":{"{{registry}}":{"auth":"%s"}}}' "$AUTH" > ~/.docker/config.json
+    - >
+      buildctl-daemonless.sh build --frontend dockerfile.v0 --local context=. --local dockerfile=.
+      --opt build-arg:APP_VERSION=$CI_COMMIT_SHORT_SHA
+      --output type=image,\"name=$IMAGE:$CI_COMMIT_SHORT_SHA,$IMAGE:latest\",push=true,registry.insecure=true
+
+deploy:
+  stage: deploy
+  image:
+    name: alpine/git:v2.54.0
+    entrypoint: [""]
+  script:
+    - git clone "http://oauth2:$MANIFEST_TOKEN@$MANIFEST_REPO" manifests
+    - cd manifests
+    # Quoted: an unquoted "newTag: " would make YAML read this line as a mapping
+    - 'sed -i "s/newTag: .*/newTag: $CI_COMMIT_SHORT_SHA/" kustomization.yaml'
+    - git config user.name "gitops-bakery-ci"
+    - git config user.email "ci@gitops-bakery.local"
+    - git commit -am "Deploy {{name}} $CI_COMMIT_SHORT_SHA"
+    # Another pipeline may have pushed meanwhile; replay on top instead of failing
+    - git pull --rebase origin main
+    - git push origin HEAD:main
+    # GitLab webhooks carry http://localhost URLs Argo CD cannot match, so ask it to refresh directly
+    - 'if [ -n "$ARGOCD_TOKEN" ]; then wget -qO /dev/null --header "Authorization: Bearer $ARGOCD_TOKEN" "http://argocd-server.argocd.svc.cluster.local/api/v1/applications/{{name}}?refresh=normal"; fi'

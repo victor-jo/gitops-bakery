@@ -1,0 +1,10 @@
+# CI owns newTag: every pipeline rewrites it to the commit it just built
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- deployment.yaml
+- service.yaml
+- servicemonitor.yaml
+images:
+- name: {{image}}
+  newTag: latest

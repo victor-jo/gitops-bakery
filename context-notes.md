@@ -23,3 +23,4 @@ Decisions and raw errors, appended as the work goes. The design lives in `docs/s
   - `accounts.ci: apiKey` with `p, role:ci, applications, get, */*, allow`.
   - Its token can `GET …?refresh=normal` (200).
   - It cannot delete (`permission denied: applications, delete, default/monitoring, sub: ci`, 403) or sync (403).
+- **Task 9.** The template is generalized from the joke app. Rendered with `name=hello`, its own pytest passes (3 passed). Each app is deployed to namespace `app-<name>` with 1 replica (laptop memory). `monitoring`, `platform-root` and `service-root` are reserved names, because an app's Argo CD Application uses the app name. GitLab group projects are only marked for deletion at first, so `deleteProject` sends a second `permanently_remove=true&full_path=` call to free the path for reuse.
