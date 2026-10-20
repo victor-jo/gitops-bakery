@@ -1,0 +1,6 @@
+# Lets containerd pull from the in-cluster Harbor over plain HTTP
+server = "http://{{registry}}"
+
+[host."http://{{registry}}"]
+  capabilities = ["pull", "resolve"]
+  skip_verify = true
