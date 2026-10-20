@@ -1,0 +1,115 @@
+# GitLab CE on kind: external PG/Valkey/Garage, no ingress/TLS/registry/SSH, sized for a laptop
+global:
+  edition: ce
+
+  hosts:
+    https: false
+    gitlab:
+      # gitlab.yml takes a bare host and assumes port 80, and Rails rejects "localhost:PORT" as a URI host;
+      # host port 80 reaches GitLab through the gitlab-host NodePort service the installer adds
+      name: localhost
+
+  # The top-level registry.enabled only skips the registry pods; Rails still calls the registry API
+  # (for example on project transfer) unless this global switch is off too
+  registry:
+    enabled: false
+
+  gatewayApi:
+    enabled: false
+    installEnvoy: false
+  ingress:
+    enabled: false
+    configureCertmanager: false
+    # Also skips the self-signed wildcard cert job, which cannot handle a ":" in the host name
+    tls:
+      enabled: false
+
+  kas:
+    enabled: false
+  minio:
+    enabled: false
+
+  # External services, following GitLab's bundled-chart migration guide
+  psql:
+    host: gitlab-rails-db-rw.gitlab.svc.cluster.local
+    password:
+      secret: gitlab-rails-db-app
+      key: password
+  redis:
+    host: valkey.gitlab.svc.cluster.local
+    auth:
+      secret: valkey-auth
+      key: default-password
+
+  appConfig:
+    object_store:
+      enabled: true
+      # Garage is only reachable inside the cluster, so Rails proxies downloads
+      proxy_download: true
+      connection:
+        secret: gitlab-object-storage
+        key: config
+    artifacts:
+      bucket: gitlab-artifacts
+    lfs:
+      bucket: git-lfs
+    uploads:
+      bucket: gitlab-uploads
+    packages:
+      bucket: gitlab-packages
+    externalDiffs:
+      enabled: true
+      bucket: gitlab-mr-diffs
+    terraformState:
+      enabled: true
+      bucket: gitlab-terraform-state
+    ciSecureFiles:
+      enabled: true
+      bucket: gitlab-ci-secure-files
+    agentPlanContent:
+      enabled: true
+      bucket: gitlab-agent-plan-content
+    ciCatalogBundles:
+      enabled: true
+      bucket: gitlab-ci-catalog-bundles
+    dependencyProxy:
+      enabled: true
+      bucket: gitlab-dependency-proxy
+
+installCertmanager: false
+nginx-ingress:
+  enabled: false
+prometheus:
+  install: false
+gitlab-runner:
+  install: false
+postgresql:
+  install: false
+redis:
+  install: false
+
+# Harbor is the registry in this lab
+registry:
+  enabled: false
+
+gitlab:
+  webservice:
+    minReplicas: 1
+    maxReplicas: 1
+  sidekiq:
+    minReplicas: 1
+    maxReplicas: 1
+  # No SSH port is mapped on kind; git goes over HTTP
+  gitlab-shell:
+    enabled: false
+  gitlab-exporter:
+    enabled: false
+  gitaly:
+    persistence:
+      size: 5Gi
+  toolbox:
+    backups:
+      objectStorage:
+        config:
+          secret: gitlab-object-storage-s3cmd
+          key: config

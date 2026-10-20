@@ -1,0 +1,14 @@
+# Exposes GitLab's workhorse on a fixed NodePort; kind maps host port 80 to it
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitlab-host
+  namespace: gitlab
+spec:
+  type: NodePort
+  selector: {{selector}}
+  ports:
+  - name: http-workhorse
+    port: 8181
+    targetPort: 8181
+    nodePort: {{nodePort}}
