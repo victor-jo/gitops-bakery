@@ -11,6 +11,13 @@ import type { Step } from "./types.js";
 export const HARBOR_APPS_PROJECT = "apps";
 export const HARBOR_ROBOT = "ci";
 
+// Replacing the robot would leave every app's HARBOR_PASSWORD stale, so a robot whose secret still works is kept
+export async function ensureCiRobot(harbor: Harbor, knownSecret: string | undefined): Promise<string> {
+  const robotName = `robot$${HARBOR_APPS_PROJECT}+${HARBOR_ROBOT}`;
+  if (knownSecret && (await harbor.robotWorks(HARBOR_APPS_PROJECT, robotName, knownSecret))) return knownSecret;
+  return (await harbor.ensureRobot(HARBOR_APPS_PROJECT, HARBOR_ROBOT)).secret;
+}
+
 export const harborStep: Step = {
   id: "harbor",
   title: "Harbor",
@@ -30,7 +37,6 @@ export const harborStep: Step = {
     }, 10 * 60_000);
     const harbor = new Harbor(HARBOR_HOST_URL, "admin", ctx.secrets.harborAdmin);
     await harbor.ensureProject(HARBOR_APPS_PROJECT, true);
-    const robot = await harbor.ensureRobot(HARBOR_APPS_PROJECT, HARBOR_ROBOT);
-    ctx.secrets = updateSecrets({ harborRobotSecret: robot.secret });
+    ctx.secrets = updateSecrets({ harborRobotSecret: await ensureCiRobot(harbor, ctx.secrets.harborRobotSecret) });
   },
 };

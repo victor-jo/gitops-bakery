@@ -56,6 +56,13 @@ export class Harbor {
     return { name: created.name, secret: created.secret };
   }
 
+  // Bad credentials get 401 even on a public project, so a 200 proves the stored robot secret still works
+  async robotWorks(project: string, robotName: string, secret: string): Promise<boolean> {
+    const auth = "Basic " + Buffer.from(`${robotName}:${secret}`).toString("base64");
+    const res = await this.fetchFn(`${this.baseUrl}/api/v2.0/projects/${project}/repositories`, { headers: { authorization: auth } });
+    return res.ok;
+  }
+
   async listTags(project: string, repo: string): Promise<string[]> {
     const res = await this.call("GET", `/projects/${project}/repositories/${encodeURIComponent(repo)}/artifacts?with_tag=true`, undefined, [404]);
     if (res.status === 404) return [];

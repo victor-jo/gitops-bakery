@@ -42,6 +42,8 @@ export async function createApp(deps: AppDeps, name: string, template: Template)
   if (state.apps[name]) throw new Error(`App "${name}" already exists`);
   const mode = getFastSyncMode();
   const nodePort = allocatePort(state.apps);
+  // Reserve the name and port before the first await so parallel tool calls cannot pick the same ones
+  saveState({ ...state, apps: { ...state.apps, [name]: { name, nodePort, createdAt: new Date().toISOString() } } });
   const vars = { name, registry: registryHost(), nodePort, image: `${registryHost()}/${HARBOR_APPS_PROJECT}/${name}` };
   const repo = `${APPS_GROUP}/${name}`;
   const manifestsRepo = `${repo}-manifests`;
@@ -63,13 +65,13 @@ export async function createApp(deps: AppDeps, name: string, template: Template)
       [{ path: `apps/${name}.yaml`, content: asset("gitops/app-application.yaml.tmpl", { name, gitlabUrl: GITLAB_INTERNAL_URL }) }],
       `Deploy ${name}`,
     );
-    // service-root would otherwise notice the new Application only on its next 3-minute poll
-    await deps.argocd.refresh(SERVICE_ROOT);
+    // service-root would otherwise notice the new Application only on its next 3-minute poll;
+    // a failed refresh only means waiting for that poll, so it must not undo the app
+    await deps.argocd.refresh(SERVICE_ROOT).catch(() => undefined);
   } catch (e) {
     await deleteApp(deps, name).catch(() => undefined);
     throw e;
   }
-  saveState({ ...loadState(), apps: { ...loadState().apps, [name]: { name, nodePort, createdAt: new Date().toISOString() } } });
   return {
     url: appUrl(nodePort),
     pipelineUrl: `${GITLAB_HOST_URL}/${repo}/-/pipelines`,

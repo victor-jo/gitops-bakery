@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 import { ARGOCD_HOST_URL, GITLAB_HOST_URL, GITLAB_INTERNAL_URL } from "../lib/config.js";
 import { ArgoCD } from "../lib/argocd.js";
 import { GitLab } from "../lib/gitlab.js";
-import { applyYaml } from "../lib/kube.js";
+import { applyYaml, kubectl } from "../lib/kube.js";
 import { assetPath } from "../lib/paths.js";
 import { render } from "../lib/template.js";
 import { waitFor } from "../lib/wait.js";
@@ -50,7 +50,14 @@ export const bootstrapStep: Step = {
   title: "GitOps repos and monitoring",
   async run(ctx) {
     const gitlab = new GitLab(GITLAB_HOST_URL, ctx.secrets.gitlabPat!);
-    const vars = { gitlabUrl: GITLAB_INTERNAL_URL, grafanaAdmin: ctx.secrets.grafanaAdmin };
+    const vars = { gitlabUrl: GITLAB_INTERNAL_URL };
+    await kubectl(["create", "namespace", "monitoring"]).catch(() => undefined);
+    await applyYaml(JSON.stringify({
+      apiVersion: "v1",
+      kind: "Secret",
+      metadata: { name: "grafana-admin", namespace: "monitoring" },
+      stringData: { "admin-user": "admin", "admin-password": ctx.secrets.grafanaAdmin },
+    }));
     for (const repo of ["platform", "service"] as const) {
       const project = await gitlab.ensureProject("devops", repo);
       await gitlab.commitFiles(project.pathWithNamespace, gitopsFiles(repo, vars), "Seed by gitops-bakery");

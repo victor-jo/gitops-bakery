@@ -28,7 +28,7 @@ test("monitoring values: no Alertmanager, any ServiceMonitor, Grafana on NodePor
   expect(v.prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues).toBe(false);
   expect(v.grafana.service).toMatchObject({ type: "NodePort", nodePort: 30004 });
   expect(v.grafana["grafana.ini"].dashboards.default_home_dashboard_path).toBe("/tmp/dashboards/requests.json");
-  expect(v.grafana.adminPassword).toBe("pw");
+  expect(v.grafana.admin.existingSecret).toBe("grafana-admin");
 });
 
 test("the dashboard shows a cumulative stat and per-minute increases for app namespaces", () => {

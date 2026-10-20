@@ -2,6 +2,7 @@
 import { createServer } from "node:net";
 import { PORTS } from "../lib/config.js";
 import { run } from "../lib/exec.js";
+import { clusterName } from "../lib/names.js";
 import type { Step } from "./types.js";
 
 export type PreflightReport = { ok: boolean; problems: string[] };
@@ -21,12 +22,28 @@ export function bindErrorMeansBusy(code: string | undefined): boolean {
   return code === "EADDRINUSE";
 }
 
-export function isPortFree(port: number): Promise<boolean> {
+function canBind(port: number, host: string): Promise<boolean> {
   return new Promise((resolve) => {
     const server = createServer();
     server.once("error", (e: NodeJS.ErrnoException) => resolve(!bindErrorMeansBusy(e.code)));
-    server.listen(port, "127.0.0.1", () => server.close(() => resolve(true)));
+    server.listen(port, host, () => server.close(() => resolve(true)));
   });
+}
+
+// A listener on 0.0.0.0 or :: does not stop a bind to 127.0.0.1 on macOS, so every address family is tried
+export async function isPortFree(port: number): Promise<boolean> {
+  for (const host of ["127.0.0.1", "0.0.0.0", "::"]) if (!(await canBind(port, host))) return false;
+  return true;
+}
+
+// The lab's own cluster holds every lab port, so checking them again (install --force, doctor) would always fail
+export function shouldCheckPorts(existingClusters: string[], name: string): boolean {
+  return !existingClusters.includes(name);
+}
+
+async function kindClusters(): Promise<string[]> {
+  const res = await run("kind", ["get", "clusters"], { allowFail: true }).catch(() => undefined);
+  return res?.code === 0 ? res.stdout.split("\n").filter(Boolean) : [];
 }
 
 export async function checkPorts(isFree: (port: number) => Promise<boolean> = isPortFree): Promise<number[]> {
@@ -50,7 +67,7 @@ export async function preflight(opts: { skipPorts?: boolean } = {}): Promise<Pre
   else if (Number(info.stdout.trim()) < MIN_MEMORY_BYTES)
     problems.push(`Docker has ${(Number(info.stdout) / 1024 ** 3).toFixed(1)} GiB memory; at least 10 GiB is needed`);
   for (const tool of REQUIRED_TOOLS) if (!(await onPath(tool))) problems.push(`'${tool}' is not on PATH (brew install ${tool === "kubectl" ? "kubernetes-cli" : tool})`);
-  if (!opts.skipPorts) problems.push(...portProblems(await checkPorts()));
+  if (!opts.skipPorts && shouldCheckPorts(await kindClusters(), clusterName())) problems.push(...portProblems(await checkPorts()));
   return { ok: problems.length === 0, problems };
 }
 

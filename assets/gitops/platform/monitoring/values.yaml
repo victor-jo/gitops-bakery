@@ -31,7 +31,11 @@ prometheusOperator:
       memory: 64Mi
 
 grafana:
-  adminPassword: "{{grafanaAdmin}}"
+  # The password stays out of git: the installer creates this Secret from ~/.gitops-bakery/secrets.json
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
   service:
     type: NodePort
     nodePort: 30004
