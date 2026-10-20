@@ -3,6 +3,8 @@ export type Pipeline = { id: number; status: string; webUrl: string; jobs: { nam
 
 const enc = encodeURIComponent;
 
+type ProjectInfo = { id: number; path_with_namespace: string; marked_for_deletion_on?: string | null };
+
 export class GitLab {
   constructor(
     private readonly baseUrl: string,
@@ -27,21 +29,21 @@ export class GitLab {
     return (await this.call<{ id: number }>("POST", "/groups", { name: path, path, visibility: "public" })).data.id;
   }
 
+  // A project scheduled for deletion keeps answering on its old path (as a redirect), so it does not count as existing
   async ensureProject(groupPath: string, name: string): Promise<{ id: number; pathWithNamespace: string }> {
     const full = `${groupPath}/${name}`;
-    const got = await this.call<{ id: number; path_with_namespace: string }>("GET", `/projects/${enc(full)}`, undefined, [404]);
-    if (got.status === 404) {
-      const groupId = await this.ensureGroup(groupPath);
-      const created = await this.call<{ id: number; path_with_namespace: string }>("POST", "/projects", {
-        name,
-        path: name,
-        namespace_id: groupId,
-        visibility: "public",
-        initialize_with_readme: false,
-      });
-      return { id: created.data.id, pathWithNamespace: created.data.path_with_namespace };
-    }
-    return { id: got.data.id, pathWithNamespace: got.data.path_with_namespace };
+    const got = await this.call<ProjectInfo>("GET", `/projects/${enc(full)}`, undefined, [404]);
+    if (got.status === 200 && got.data.path_with_namespace === full && !got.data.marked_for_deletion_on)
+      return { id: got.data.id, pathWithNamespace: got.data.path_with_namespace };
+    const groupId = await this.ensureGroup(groupPath);
+    const created = await this.call<ProjectInfo>("POST", "/projects", {
+      name,
+      path: name,
+      namespace_id: groupId,
+      visibility: "public",
+      initialize_with_readme: false,
+    });
+    return { id: created.data.id, pathWithNamespace: created.data.path_with_namespace };
   }
 
   async commitFiles(project: string, files: { path: string; content: string }[], message: string, branch = "main"): Promise<string> {
@@ -92,11 +94,15 @@ export class GitLab {
     return { id: p.id, status: p.status, webUrl: p.web_url, jobs: jobs.map((j) => ({ name: j.name, status: j.status })) };
   }
 
-  // Group projects are only marked for deletion at first; the second call removes them for good so the path is reusable
+  // Group projects are first only marked for deletion and renamed; removing them for good needs the id and the new path
   async deleteProject(project: string): Promise<void> {
-    const first = await this.call("DELETE", `/projects/${enc(project)}`, undefined, [404]);
-    if (first.status === 404) return;
-    await this.call("DELETE", `/projects/${enc(project)}?permanently_remove=true&full_path=${enc(project)}`, undefined, [400, 404]);
+    const got = await this.call<ProjectInfo>("GET", `/projects/${enc(project)}`, undefined, [404]);
+    if (got.status === 404) return;
+    const id = got.data.id;
+    if (!got.data.marked_for_deletion_on) await this.call("DELETE", `/projects/${id}`, undefined, [404]);
+    const marked = await this.call<ProjectInfo>("GET", `/projects/${id}`, undefined, [404]);
+    if (marked.status === 404) return;
+    await this.call("DELETE", `/projects/${id}?permanently_remove=true&full_path=${enc(marked.data.path_with_namespace)}`, undefined, [404]);
   }
 
   async deleteFile(project: string, path: string, message: string, branch = "main"): Promise<void> {

@@ -53,3 +53,32 @@ test("ensureProject creates a public project inside the group", async () => {
   expect(p).toEqual({ id: 9, pathWithNamespace: "devops/platform" });
   expect(calls.at(-1)!.body).toMatchObject({ path: "platform", namespace_id: 5, visibility: "public" });
 });
+
+test("deleteProject marks by id, then permanently removes using the renamed path", async () => {
+  const { fn, calls } = stubFetch({
+    "GET /api/v4/projects/apps%2Fhello": { status: 200, body: { id: 7, path_with_namespace: "apps/hello", marked_for_deletion_on: null } },
+    "DELETE /api/v4/projects/7": { status: 202 },
+    "GET /api/v4/projects/7": { status: 200, body: { id: 7, path_with_namespace: "apps/hello-deletion_scheduled-7" } },
+    "DELETE /api/v4/projects/7?permanently_remove=true&full_path=apps%2Fhello-deletion_scheduled-7": { status: 202 },
+  });
+  await new GitLab(base, "t", fn).deleteProject("apps/hello");
+  expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+    "GET /api/v4/projects/apps%2Fhello",
+    "DELETE /api/v4/projects/7",
+    "GET /api/v4/projects/7",
+    "DELETE /api/v4/projects/7?permanently_remove=true&full_path=apps%2Fhello-deletion_scheduled-7",
+  ]);
+});
+
+test("ensureProject ignores a project that is only scheduled for deletion and creates a fresh one", async () => {
+  const { fn, calls } = stubFetch({
+    "GET /api/v4/projects/apps%2Fhello": {
+      status: 200,
+      body: { id: 7, path_with_namespace: "apps/hello-deletion_scheduled-7", marked_for_deletion_on: "2026-10-27" },
+    },
+    "GET /api/v4/groups/apps": { status: 200, body: { id: 3 } },
+    "POST /api/v4/projects": { status: 201, body: { id: 8, path_with_namespace: "apps/hello" } },
+  });
+  expect(await new GitLab(base, "t", fn).ensureProject("apps", "hello")).toEqual({ id: 8, pathWithNamespace: "apps/hello" });
+  expect(calls.some((c) => c.method === "POST")).toBe(true);
+});
