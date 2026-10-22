@@ -45,6 +45,18 @@ export async function waitHealthy(argocd: ArgoCD, names: string[], timeoutMs: nu
   }
 }
 
+// A lab bootstrapped by this version already has identical content, and GitLab rejects empty commits
+export async function commitIfChanged(
+  gitlab: Pick<GitLab, "readFile" | "commitFiles">,
+  project: string,
+  file: RepoFile,
+  message: string,
+): Promise<boolean> {
+  if ((await gitlab.readFile(project, file.path)) === file.content) return false;
+  await gitlab.commitFiles(project, [file], message);
+  return true;
+}
+
 // Labs bootstrapped before service-root allowed an empty sync get the updated root.yaml through this step
 export const serviceRootAllowEmptyStep: Step = {
   id: "service-root-allow-empty",
@@ -52,10 +64,7 @@ export const serviceRootAllowEmptyStep: Step = {
   async run(ctx) {
     const gitlab = new GitLab(GITLAB_HOST_URL, ctx.secrets.gitlabPat!);
     const root = gitopsFiles("service", { gitlabUrl: GITLAB_INTERNAL_URL }).find((f) => f.path === "root.yaml")!;
-    await gitlab.commitFiles("devops/service", [root], "Let service-root prune its last app").catch((e: Error) => {
-      // A lab bootstrapped by this version already has the same content, which GitLab rejects as an empty commit
-      if (!/no changes|A file with this name already exists|empty/i.test(e.message)) throw e;
-    });
+    await commitIfChanged(gitlab, "devops/service", root, "Let service-root prune its last app");
     await applyYaml(root.content);
   },
 };

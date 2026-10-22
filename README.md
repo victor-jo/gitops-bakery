@@ -121,6 +121,10 @@ gitops-bakery mcp                 # MCP server on stdio (Claude Code runs this)
 
 The tag-to-live time is short because CI asks Argo CD to refresh right after it pushes. GitLab's webhooks don't help here. They carry `http://localhost/...` URLs, which never match the in-cluster repo URLs Argo CD tracks. See [docs/architecture.md](docs/architecture.md).
 
+## Upgrade
+
+Run `install` with the new tag, for example `npx github:victor-jo/gitops-bakery#v0.1.1 install`. Finished steps are skipped and only new ones run. The Claude Code MCP entry and skill are re-pinned to the new version.
+
 ## Uninstall
 
 ```bash

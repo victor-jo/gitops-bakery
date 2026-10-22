@@ -24,6 +24,7 @@ export type AppDeps = {
   secrets: Secrets;
   kube: (args: string[]) => Promise<string>;
   pollMs?: number;
+  deleteTimeoutMs?: number;
 };
 export type Template = "fastapi";
 export type TemplateVars = { name: string; registry: string; nodePort: number; image: string };
@@ -129,10 +130,18 @@ export async function deleteApp(deps: AppDeps, name: string): Promise<void> {
   // Removing the Application from git lets Argo CD cascade-delete the workload through its finalizer
   await deps.gitlab.deleteFile(SERVICE_REPO, `apps/${name}.yaml`, `Remove ${name}`);
   await deps.argocd.refresh(SERVICE_ROOT).catch(() => undefined);
-  await waitFor(`Argo CD to remove ${name}`, async () => {
-    const app = await deps.argocd.getApp(name);
-    return { ok: app === null, state: app ? `${app.sync}/${app.health}` : "gone" };
-  }, 3 * 60_000, deps.pollMs ?? 3000).catch(() => undefined);
+  try {
+    await waitFor(`Argo CD to remove ${name}`, async () => {
+      const app = await deps.argocd.getApp(name);
+      return { ok: app === null, state: app ? `${app.sync}/${app.health}` : "gone" };
+    }, deps.deleteTimeoutMs ?? 3 * 60_000, deps.pollMs ?? 3000);
+  } catch (e) {
+    // Releasing the port now would hand it to a Service that may still exist, so keep the app reserved and say what to run
+    throw new Error(
+      `${(e as Error).message}\nArgo CD has not removed Application ${name}. Check: kubectl -n argocd get application service-root ${name}\n` +
+        `To force it: kubectl -n argocd delete application ${name}\nThen run bakery_delete_app again; the app keeps its port until then.`,
+    );
+  }
   // Deleting the namespace is the backstop that frees the NodePort even if the cascade did not finish
   await deps.kube(["delete", "namespace", `app-${name}`, "--ignore-not-found", "--wait=true", "--timeout=180s"]).catch(() => undefined);
   await deps.gitlab.deleteProject(`${APPS_GROUP}/${name}`);

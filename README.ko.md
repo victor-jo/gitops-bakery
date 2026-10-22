@@ -121,6 +121,10 @@ gitops-bakery mcp                 # stdio MCP 서버 (Claude Code가 실행)
 
 태그 커밋 뒤 반영이 빠른 건 CI가 push 직후 Argo CD에 새로고침을 직접 요청하기 때문이다. GitLab webhook으로는 안 된다. webhook에는 `http://localhost/...` 주소가 실리는데, Argo CD가 지켜보는 저장소 주소는 클러스터 안 주소라 서로 맞지 않는다. 자세한 내용은 [docs/architecture.md](docs/architecture.md)에 있다.
 
+## 업그레이드
+
+새 태그로 `install`을 다시 실행하면 된다(예: `npx github:victor-jo/gitops-bakery#v0.1.1 install`). 이미 끝난 단계는 건너뛰고 새 단계만 돈다. Claude Code의 MCP 등록과 스킬도 새 버전에 맞춰 다시 고정된다.
+
 ## 삭제
 
 ```bash

@@ -3,7 +3,7 @@ import { cpSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { run } from "../lib/exec.js";
-import { packageRoot } from "../lib/paths.js";
+import { packageRoot, packageVersion } from "../lib/paths.js";
 import type { Step } from "./types.js";
 
 const SERVER_NAME = "gitops-bakery";
@@ -32,8 +32,9 @@ async function hasClaude(): Promise<boolean> {
   return (await run("which", ["claude"], { allowFail: true })).code === 0;
 }
 
+// The id carries the version so upgrading the CLI re-registers the MCP entry and skill, which are pinned per release
 export const claudeStep: Step = {
-  id: "claude",
+  id: `claude@${packageVersion()}`,
   title: "Claude Code skill and MCP server",
   async run(ctx) {
     rmSync(skillDir(), { recursive: true, force: true });

@@ -114,6 +114,15 @@ export class GitLab {
     await this.call("DELETE", `/projects/${id}?permanently_remove=true&full_path=${enc(marked.data.path_with_namespace)}`, undefined, [404]);
   }
 
+  async readFile(project: string, path: string, branch = "main"): Promise<string | null> {
+    const res = await this.fetchFn(`${this.baseUrl}/api/v4/projects/${enc(project)}/repository/files/${enc(path)}/raw?ref=${branch}`, {
+      headers: { "PRIVATE-TOKEN": this.token },
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`GitLab GET ${project}:${path} failed: ${res.status}`);
+    return res.text();
+  }
+
   async deleteFile(project: string, path: string, message: string, branch = "main"): Promise<void> {
     const exists = await this.call("GET", `/projects/${enc(project)}/repository/files/${enc(path)}?ref=${branch}`, undefined, [404]);
     if (exists.status === 404) return;

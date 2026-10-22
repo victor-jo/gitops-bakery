@@ -20,9 +20,9 @@ test("bakery names are recognised and other kind clusters are not", () => {
   expect(isBakeryClusterName("ml-k8s")).toBe(false);
 });
 
-test("pickUninstallTarget prefers state, then an explicit name, then a single bakery-looking cluster", () => {
+test("pickUninstallTarget uses a live state name, an explicit bakery name, or a single bakery-looking cluster", () => {
   expect(pickUninstallTarget({ stateName: "airy-scone", clusters: ["airy-scone", "kind"] })).toEqual({ target: "airy-scone" });
-  expect(pickUninstallTarget({ explicit: "kind", clusters: ["kind"] })).toEqual({ target: "kind" });
+  expect(pickUninstallTarget({ explicit: "golden-danish", clusters: ["golden-danish"] })).toEqual({ target: "golden-danish" });
   expect(pickUninstallTarget({ clusters: ["kind", "toasty-scone"] })).toEqual({ target: "toasty-scone", guessed: true });
 });
 
