@@ -6,8 +6,8 @@ export function kubeContext(): string {
   return `kind-${clusterName()}`;
 }
 
-export async function kubectl(args: string[], input?: string): Promise<string> {
-  return (await run("kubectl", ["--context", kubeContext(), ...args], { input })).stdout;
+export async function kubectl(args: string[], input?: string, redact: string[] = []): Promise<string> {
+  return (await run("kubectl", ["--context", kubeContext(), ...args], { input, redact })).stdout;
 }
 
 export async function applyYaml(yaml: string, opts: { serverSide?: boolean } = {}): Promise<void> {

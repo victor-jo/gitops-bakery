@@ -23,6 +23,11 @@ export function mcpCommand(): { command: string; args: string[] } {
   return { command: "npx", args: ["-y", `github:victor-jo/gitops-bakery#v${version}`, "mcp"] };
 }
 
+// Quotes only what a POSIX shell would split or expand, so the printed command can be pasted as is
+export function shellQuote(args: string[]): string {
+  return args.map((a) => (/^[A-Za-z0-9@%+=:,./_-]+$/.test(a) ? a : `'${a.replace(/'/g, "'\\''")}'`)).join(" ");
+}
+
 async function hasClaude(): Promise<boolean> {
   return (await run("which", ["claude"], { allowFail: true })).code === 0;
 }
@@ -37,7 +42,7 @@ export const claudeStep: Step = {
     const addArgs = ["mcp", "add", "--scope", "user", SERVER_NAME, "--", command, ...args];
     if (!(await hasClaude())) {
       ctx.log.info(`Claude Code not found. Skill installed in ${skillDir()}. Register the MCP server later with:`);
-      ctx.log.info(`  claude ${addArgs.join(" ")}`);
+      ctx.log.info(`  claude ${shellQuote(addArgs)}`);
       return;
     }
     await run("claude", ["mcp", "remove", "--scope", "user", SERVER_NAME], { allowFail: true });

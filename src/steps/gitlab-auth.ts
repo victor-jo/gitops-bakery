@@ -15,13 +15,18 @@ export function patRubyScript(token: string): string {
   ].join("; ");
 }
 
+// The script travels on stdin so the token never shows up in `ps` or in an error's command line
+export async function mintRootToken(token: string, exec: (args: string[], input?: string) => Promise<string>): Promise<void> {
+  await exec(["-n", "gitlab", "exec", "-i", "deploy/gitlab-toolbox", "-c", "toolbox", "--", "gitlab-rails", "runner", "-"], patRubyScript(token));
+}
+
 export const gitlabAuthStep: Step = {
   id: "gitlab-auth",
   title: "GitLab root token",
   async run(ctx) {
     const rootPassword = await secretValue("gitlab", "gitlab-gitlab-initial-root-password", "password");
     const token = `glpat-${randomSecret(20)}`;
-    await kubectl(["-n", "gitlab", "exec", "deploy/gitlab-toolbox", "-c", "toolbox", "--", "gitlab-rails", "runner", patRubyScript(token)]);
+    await mintRootToken(token, (args, input) => kubectl(args, input, [token]));
     const me = await new GitLab(GITLAB_HOST_URL, token).currentUser();
     if (me.username !== "root") throw new Error(`New token belongs to ${me.username}, expected root`);
     ctx.secrets = updateSecrets({ gitlabRootPassword: rootPassword, gitlabPat: token });

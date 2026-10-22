@@ -34,3 +34,9 @@ test("without the claude CLI the step installs the skill, prints the command and
   expect(existsSync(join(claudeDir, "skills", "gitops-bakery", "SKILL.md"))).toBe(true);
   expect(lines.join("\n")).toContain("claude mcp add --scope user gitops-bakery --");
 });
+
+test("printed command quotes a path with spaces", async () => {
+  const { shellQuote } = await import("../../src/steps/claude.js");
+  expect(shellQuote(["node", "/Users/a b/dist/cli.js", "mcp"])).toBe("node '/Users/a b/dist/cli.js' mcp");
+  expect(shellQuote(["it's"])).toBe("'it'\\''s'");
+});

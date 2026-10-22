@@ -2,12 +2,13 @@
 import { spawn } from "node:child_process";
 
 export type ExecResult = { code: number; stdout: string; stderr: string };
-export type ExecOptions = { input?: string; cwd?: string; env?: Record<string, string>; allowFail?: boolean };
+export type ExecOptions = { input?: string; cwd?: string; env?: Record<string, string>; allowFail?: boolean; redact?: string[] };
 
 export class ExecError extends Error {
-  constructor(public readonly cmd: string, public readonly result: ExecResult) {
+  constructor(public readonly cmd: string, public readonly result: ExecResult, redact: string[] = []) {
+    const mask = (s: string) => redact.filter(Boolean).reduce((acc, v) => acc.split(v).join("***"), s);
     const tail = result.stderr.trim().split("\n").slice(-20).join("\n");
-    super(`Command failed (exit ${result.code}): ${cmd}\n${tail}`);
+    super(mask(`Command failed (exit ${result.code}): ${cmd}\n${tail}`));
   }
 }
 
@@ -21,7 +22,7 @@ export function run(cmd: string, args: string[], opts: ExecOptions = {}): Promis
     child.on("error", reject);
     child.on("close", (code) => {
       const result = { code: code ?? 1, stdout, stderr };
-      if (result.code !== 0 && !opts.allowFail) reject(new ExecError([cmd, ...args].join(" "), result));
+      if (result.code !== 0 && !opts.allowFail) reject(new ExecError([cmd, ...args].join(" "), result, opts.redact));
       else resolve(result);
     });
     child.stdin.end(opts.input ?? "");
