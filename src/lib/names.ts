@@ -15,6 +15,11 @@ export function randomClusterName(rand: () => number = Math.random): string {
   return `${pick(ADJECTIVES)}-${pick(BREADS)}`;
 }
 
+export function isBakeryClusterName(name: string): boolean {
+  const [adj, bread, ...rest] = name.split("-");
+  return rest.length === 0 && ADJECTIVES.includes(adj) && BREADS.includes(bread);
+}
+
 export function clusterName(): string {
   return loadState().clusterName;
 }

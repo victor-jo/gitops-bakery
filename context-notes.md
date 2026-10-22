@@ -47,3 +47,7 @@ Decisions and raw errors, appended as the work goes. The design lives in `docs/s
 - **v0.1.1 items 3, 4.**
   - The Garage chart is cloned into `<cache>.tmp-<pid>` and then renamed. A cache without `script/helm/garage/Chart.yaml` is discarded and cloned again.
   - Before every `helm upgrade --install`, `helm status -o json` is read. Live: a throwaway release whose helm was `kill -9`'d sat in `pending-install`, and `helmUpgrade` stopped with `Helm release stuck is stuck in pending-install … Run: helm uninstall stuck -n bakery-stuck --kube-context kind-toasty-scone`. There is no automatic uninstall, because it could drop PVC-backed data.
+- **v0.1.1 items 7, 8 (live on `toasty-scone`).**
+  - `doctor` on the running lab prints `✓ Lab toasty-scone is running; its ports are in use by it.`
+  - With `state.json` moved away, `uninstall` found `toasty-scone` as the only cluster with a bakery name and asked before deleting. The answer "n" deleted nothing, and no new `state.json` was created.
+  - `uninstall --cluster nope` → `No kind cluster named "nope"`, exit 1.

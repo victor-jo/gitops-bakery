@@ -12,6 +12,8 @@ import { bakeryHome } from "./lib/paths.js";
 import { loadOrCreateSecrets, secretsPath } from "./lib/secrets.js";
 import { ALL_STEPS } from "./steps/index.js";
 import { preflight } from "./steps/preflight.js";
+import { doctorSummary, pickUninstallTarget } from "./uninstall.js";
+import { readState } from "./lib/state.js";
 import { removeClaudeIntegration } from "./steps/claude.js";
 import { startMcpServer } from "./mcp/server.js";
 import { statusReport } from "./lib/status.js";
@@ -65,19 +67,26 @@ program
   .description("Check Docker, required CLIs, memory and free ports")
   .action(async () => {
     const report = await preflight();
-    if (report.ok) console.log("✓ Ready to install");
-    else {
-      for (const p of report.problems) console.log(`✗ ${p}`);
-      process.exitCode = 1;
-    }
+    const state = readState();
+    const running = state && (await kindClusters()).includes(state.clusterName) ? state.clusterName : undefined;
+    console.log(doctorSummary(report, running));
+    if (!report.ok) process.exitCode = 1;
   });
 
 program
   .command("uninstall")
   .description("Delete the cluster and everything gitops-bakery stored on this machine")
   .option("--yes", "do not ask for confirmation")
-  .action(async (opts: { yes?: boolean }) => {
-    const name = clusterName();
+  .option("--cluster <name>", "cluster to delete when ~/.gitops-bakery/state.json is missing")
+  .action(async (opts: { yes?: boolean; cluster?: string }) => {
+    const pick = pickUninstallTarget({ stateName: readState()?.clusterName, explicit: opts.cluster, clusters: await kindClusters() });
+    if (pick.error) {
+      console.log(pick.error);
+      process.exitCode = 1;
+      return;
+    }
+    const name = pick.target!;
+    if (pick.guessed) console.log(`state.json is missing; ${name} is the only cluster with a gitops-bakery name.`);
     if (!opts.yes) {
       const rl = createInterface({ input: process.stdin, output: process.stdout });
       const answer = await rl.question(`Delete cluster ${name} and ${bakeryHome()}? [y/N] `);
@@ -89,6 +98,11 @@ program
     if (existsSync(bakeryHome())) rmSync(bakeryHome(), { recursive: true, force: true });
     console.log(`✓ Removed ${name}`);
   });
+
+async function kindClusters(): Promise<string[]> {
+  const res = await run("kind", ["get", "clusters"], { allowFail: true });
+  return res.code === 0 ? res.stdout.split("\n").filter(Boolean) : [];
+}
 
 program
   .command("mcp")

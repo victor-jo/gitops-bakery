@@ -16,6 +16,11 @@ export type State = {
 
 const statePath = () => join(bakeryHome(), "state.json");
 
+// Read-only view for commands that must not create a lab as a side effect (uninstall)
+export function readState(): State | undefined {
+  return readJson<State>(statePath());
+}
+
 export function loadState(): State {
   const existing = readJson<State>(statePath());
   if (existing) return existing;
