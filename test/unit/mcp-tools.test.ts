@@ -19,11 +19,14 @@ const secrets = {
   argocdAdmin: "ARGOADMINSECRETVALUE0009",
 };
 
+let deleting = false;
 function deps(): AppDeps {
   return {
     secrets,
+    pollMs: 1,
+    kube: vi.fn(async () => ""),
     gitlab: {
-      ensureProject: vi.fn(async (g: string, n: string) => ({ id: 1, pathWithNamespace: `${g}/${n}` })),
+      createProject: vi.fn(async (g: string, n: string) => ({ id: 1, pathWithNamespace: `${g}/${n}` })),
       commitFiles: vi.fn(async () => "sha"),
       createProjectToken: vi.fn(async () => "manifest-token-should-not-leak"),
       setVariable: vi.fn(async () => {}),
@@ -33,7 +36,7 @@ function deps(): AppDeps {
     },
     harbor: { listTags: vi.fn(async () => ["abc"]), deleteRepository: vi.fn(async () => {}) },
     argocd: {
-      getApp: vi.fn(async () => ({ sync: "Synced", health: "Healthy", revision: "r", reconciledAt: "" })),
+      getApp: vi.fn(async () => (deleting ? null : { sync: "Synced", health: "Healthy", revision: "r", reconciledAt: "" })),
       refresh: vi.fn(async () => {}),
     },
   } as unknown as AppDeps;
@@ -62,7 +65,7 @@ test("tool outputs never contain secret values", async () => {
     await run("bakery_status", {}),
     await run("bakery_create_app", { name: "hello" }),
     await run("bakery_app_status", { name: "hello" }),
-    await run("bakery_delete_app", { name: "hello" }),
+    await ((deleting = true), run("bakery_delete_app", { name: "hello" })),
   ].map((o) => o.content.map((c) => c.text).join("\n"));
   for (const text of outputs) {
     for (const value of [...Object.values(secrets), "manifest-token-should-not-leak"]) expect(text).not.toContain(value);

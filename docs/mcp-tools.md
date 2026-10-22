@@ -27,7 +27,7 @@ In order, it:
 5. Commits `apps/<name>.yaml` to `devops/service`.
 6. Refreshes `service-root`.
 
-If any step fails, everything created so far is removed. Returns `url`, `pipelineUrl`, `repo` and `manifestsRepo`.
+It refuses a name whose GitLab project already exists. If a later step fails, it removes only what this call created, so a project that existed before is never touched. Returns `url`, `pipelineUrl`, `repo` and `manifestsRepo`.
 
 ## `bakery_app_status`
 
@@ -47,7 +47,7 @@ Returns:
 |---|---|
 | `name` | an existing app |
 
-Removes `devops/service/apps/<name>.yaml` (so Argo CD prunes the workload), both GitLab repos (permanently), and the Harbor repository.
+Removes `devops/service/apps/<name>.yaml`. Argo CD then cascade-deletes the workload through the Application's finalizer. The tool waits until the Application is gone and deletes namespace `app-<name>`. Then it removes both GitLab repos (permanently) and the Harbor repository. The app's port is released last, so an immediate re-create cannot collide with the old Service.
 
 ## Secrets
 

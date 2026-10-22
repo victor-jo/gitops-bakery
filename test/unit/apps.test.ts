@@ -55,7 +55,7 @@ test("the CI template keeps the quoted sed line and refreshes Argo CD only when 
 
 function fakeDeps() {
   const gitlab = {
-    ensureProject: vi.fn(async (g: string, n: string) => ({ id: 1, pathWithNamespace: `${g}/${n}` })),
+    createProject: vi.fn(async (g: string, n: string) => ({ id: 1, pathWithNamespace: `${g}/${n}` })),
     commitFiles: vi.fn(async () => "sha"),
     createProjectToken: vi.fn(async () => "tok"),
     setVariable: vi.fn(async () => {}),
@@ -72,7 +72,7 @@ test("createApp rejects a duplicate before touching GitLab", async () => {
   saveState({ ...loadState(), fastSync: "ci-refresh", apps: { hello: { name: "hello", nodePort: 30010, createdAt: "" } } });
   const { deps, gitlab } = fakeDeps();
   await expect(createApp(deps, "hello", "fastapi")).rejects.toThrow(/already exists/);
-  expect(gitlab.ensureProject).not.toHaveBeenCalled();
+  expect(gitlab.createProject).not.toHaveBeenCalled();
 });
 
 test("createApp sets raw CI variables and records the app", async () => {

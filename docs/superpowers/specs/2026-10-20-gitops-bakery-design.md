@@ -131,7 +131,7 @@ It packages a stack that was first built by hand in `~/dev/infra/ml-kind-k8s`: k
 | Tool | Does |
 |---|---|
 | `bakery_status` | Component health, URLs, usernames, secrets file path. Never returns secret values |
-| `bakery_create_app(name, template="fastapi")` | Creates `apps/<name>` and `apps/<name>-manifests`, sets CI variables (raw), pushes the template, allocates a NodePort from 30010–30019, adds `devops/service/apps/<name>.yaml`, adds webhooks, and returns the URL plus a pipeline link |
+| `bakery_create_app(name, template="fastapi")` | Creates `apps/<name>` and `apps/<name>-manifests`, sets CI variables (raw), pushes the template, allocates a NodePort from 30010–30019, adds `devops/service/apps/<name>.yaml`, refreshes `service-root`, and returns the URL plus a pipeline link. Fast sync comes from the CI refresh call; webhooks do not match the in-cluster repo URLs |
 | `bakery_app_status(name)` | Latest pipeline status and jobs, Harbor tags, Argo CD sync and health, URL |
 | `bakery_delete_app(name)` | Removes the Application from `devops/service`, then deletes both repos and the Harbor repository |
 

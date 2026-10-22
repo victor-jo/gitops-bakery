@@ -11,7 +11,8 @@ const client = new Client({ name: "bakery-e2e", version: "0.1.0" });
 await client.connect(new StdioClientTransport({ command: "node", args: [cli, "mcp"] }));
 
 async function call(tool, args = {}) {
-  const res = await client.callTool({ name: tool, arguments: args });
+  // Deleting waits for Argo CD to cascade-delete the workload, which can outlast the SDK's 60 s default
+  const res = await client.callTool({ name: tool, arguments: args }, undefined, { timeout: 10 * 60_000 });
   const text = res.content.map((c) => c.text).join("\n");
   if (res.isError) throw new Error(`${tool} failed: ${text}`);
   return JSON.parse(text);

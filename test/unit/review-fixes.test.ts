@@ -44,7 +44,7 @@ test("a working CI robot is kept, so existing apps keep pushing", async () => {
 function slowDeps() {
   const pause = () => new Promise((r) => setTimeout(r, 20));
   const gitlab = {
-    ensureProject: vi.fn(async (g: string, n: string) => (await pause(), { id: 1, pathWithNamespace: `${g}/${n}` })),
+    createProject: vi.fn(async (g: string, n: string) => (await pause(), { id: 1, pathWithNamespace: `${g}/${n}` })),
     commitFiles: vi.fn(async () => (await pause(), "sha")),
     createProjectToken: vi.fn(async () => "tok"),
     setVariable: vi.fn(async () => {}),

@@ -17,3 +17,5 @@ spec:
     automated:
       prune: true
       selfHeal: true
+      # Deleting the last app empties this repo; without this Argo CD refuses to prune it
+      allowEmpty: true

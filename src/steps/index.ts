@@ -1,6 +1,6 @@
 // Install order of all steps
 import { argocdStep } from "./argocd.js";
-import { bootstrapStep } from "./bootstrap.js";
+import { bootstrapStep, serviceRootAllowEmptyStep } from "./bootstrap.js";
 import { claudeStep } from "./claude.js";
 import { clusterStep } from "./cluster.js";
 import { cnpgStep } from "./cnpg.js";
@@ -14,4 +14,4 @@ import { harborStep } from "./harbor.js";
 import { preflightStep } from "./preflight.js";
 import type { Step } from "./types.js";
 
-export const ALL_STEPS: Step[] = [preflightStep, clusterStep, harborStep, argocdStep, cnpgStep, valkeyStep, garageStep, gitlabStep, gitlabAuthStep, gitlabRunnerStep, bootstrapStep, fastSyncStep, claudeStep];
+export const ALL_STEPS: Step[] = [preflightStep, clusterStep, harborStep, argocdStep, cnpgStep, valkeyStep, garageStep, gitlabStep, gitlabAuthStep, gitlabRunnerStep, bootstrapStep, serviceRootAllowEmptyStep, fastSyncStep, claudeStep];

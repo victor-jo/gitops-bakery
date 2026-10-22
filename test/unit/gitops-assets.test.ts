@@ -47,3 +47,14 @@ test("root Applications live outside apps/ so they never manage themselves", () 
   }
   expect(parse(file(service, "root.yaml")).spec.source.repoURL).toBe("http://gitlab.test:8181/devops/service.git");
 });
+
+test("service-root may prune its last app (Argo CD otherwise refuses to 'wipe out all resources')", () => {
+  expect(parse(file(service, "root.yaml")).spec.syncPolicy.automated.allowEmpty).toBe(true);
+});
+
+test("existing labs pick up the service-root change through a new install step", async () => {
+  const { ALL_STEPS } = await import("../../src/steps/index.js");
+  const ids = ALL_STEPS.map((s) => s.id);
+  expect(ids).toContain("service-root-allow-empty");
+  expect(ids.indexOf("service-root-allow-empty")).toBeGreaterThan(ids.indexOf("bootstrap"));
+});

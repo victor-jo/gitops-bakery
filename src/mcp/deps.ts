@@ -4,6 +4,7 @@ import { ArgoCD } from "../lib/argocd.js";
 import { ARGOCD_HOST_URL, GITLAB_HOST_URL, HARBOR_HOST_URL } from "../lib/config.js";
 import { GitLab } from "../lib/gitlab.js";
 import { Harbor } from "../lib/harbor.js";
+import { kubectl } from "../lib/kube.js";
 import { loadOrCreateSecrets } from "../lib/secrets.js";
 
 export async function liveDeps(): Promise<AppDeps> {
@@ -14,5 +15,6 @@ export async function liveDeps(): Promise<AppDeps> {
     gitlab: new GitLab(GITLAB_HOST_URL, secrets.gitlabPat),
     harbor: new Harbor(HARBOR_HOST_URL, "admin", secrets.harborAdmin),
     argocd: await ArgoCD.login(ARGOCD_HOST_URL, "admin", secrets.argocdAdmin),
+    kube: (args) => kubectl(args),
   };
 }

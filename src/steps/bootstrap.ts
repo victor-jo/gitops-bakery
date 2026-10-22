@@ -45,6 +45,21 @@ export async function waitHealthy(argocd: ArgoCD, names: string[], timeoutMs: nu
   }
 }
 
+// Labs bootstrapped before service-root allowed an empty sync get the updated root.yaml through this step
+export const serviceRootAllowEmptyStep: Step = {
+  id: "service-root-allow-empty",
+  title: "service-root may prune its last app",
+  async run(ctx) {
+    const gitlab = new GitLab(GITLAB_HOST_URL, ctx.secrets.gitlabPat!);
+    const root = gitopsFiles("service", { gitlabUrl: GITLAB_INTERNAL_URL }).find((f) => f.path === "root.yaml")!;
+    await gitlab.commitFiles("devops/service", [root], "Let service-root prune its last app").catch((e: Error) => {
+      // A lab bootstrapped by this version already has the same content, which GitLab rejects as an empty commit
+      if (!/no changes|A file with this name already exists|empty/i.test(e.message)) throw e;
+    });
+    await applyYaml(root.content);
+  },
+};
+
 export const bootstrapStep: Step = {
   id: "bootstrap",
   title: "GitOps repos and monitoring",

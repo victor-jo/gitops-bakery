@@ -46,6 +46,15 @@ export class GitLab {
     return { id: created.data.id, pathWithNamespace: created.data.path_with_namespace };
   }
 
+  // Strict variant for app creation: an existing live project is someone else's and must not be adopted
+  async createProject(groupPath: string, name: string): Promise<{ id: number; pathWithNamespace: string }> {
+    const full = `${groupPath}/${name}`;
+    const got = await this.call<ProjectInfo>("GET", `/projects/${enc(full)}`, undefined, [404]);
+    if (got.status === 200 && got.data.path_with_namespace === full && !got.data.marked_for_deletion_on)
+      throw new Error(`GitLab project ${full} already exists; delete it or pick another name`);
+    return this.ensureProject(groupPath, name);
+  }
+
   async commitFiles(project: string, files: { path: string; content: string }[], message: string, branch = "main"): Promise<string> {
     const actions = [];
     for (const f of files) {
