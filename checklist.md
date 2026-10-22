@@ -22,4 +22,4 @@ Plan: `docs/superpowers/plans/2026-10-20-gitops-bakery-v0.1.md`
 - [x] 3. App lifecycle: refuse existing repos, safe delete, docs (items 2, 6, 9)
 - [x] 4. Resume robustness: Garage cache, helm pending (items 3, 4)
 - [x] 5. Uninstall without state, doctor wording (items 7, 8)
-- [ ] 6. Release: E2E, review, merge, publish (asks first)
+- [x] 6. Release: E2E, review, merge, publish (asks first)

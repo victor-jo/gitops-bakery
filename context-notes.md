@@ -51,3 +51,8 @@ Decisions and raw errors, appended as the work goes. The design lives in `docs/s
   - `doctor` on the running lab prints `✓ Lab toasty-scone is running; its ports are in use by it.`
   - With `state.json` moved away, `uninstall` found `toasty-scone` as the only cluster with a bakery name and asked before deleting. The answer "n" deleted nothing, and no new `state.json` was created.
   - `uninstall --cluster nope` → `No kind cluster named "nope"`, exit 1.
+- **v0.1.1 release checks.**
+  - E2E with the pre-review build (cluster `fluffy-croissant`) PASSED: install 628 s, create to serving 92 s, source to live 44 s, tag to live 4 s. The new `service-root-allow-empty` step passed on a fresh install.
+  - After the review fixes, the upgrade path was checked: rerunning `install` on that lab ran only `claude@0.1.1` (state now holds both `claude` and `claude@0.1.1`).
+  - E2E with the final build (cluster `seeded-pita`) PASSED: install 679 s, create to serving 104 s, source to live 55 s, tag to live 4 s, memory about 7.9 GiB.
+  - The user's lab is now `crusty-focaccia`, and the MCP entry is `✔ Connected`.
