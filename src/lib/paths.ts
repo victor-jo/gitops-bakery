@@ -1,4 +1,5 @@
 // Filesystem locations: the per-user bakery home and the package's bundled assets
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +12,10 @@ export function bakeryHome(): string {
 
 export function packageRoot(): string {
   return PACKAGE_ROOT;
+}
+
+export function packageVersion(): string {
+  return (JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8")) as { version: string }).version;
 }
 
 export function assetPath(...p: string[]): string {

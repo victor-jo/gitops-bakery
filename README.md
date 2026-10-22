@@ -5,7 +5,7 @@
 [한국어](README.ko.md)
 
 ```bash
-npx github:victor-jo/gitops-bakery#v0.1.0 install
+npx github:victor-jo/gitops-bakery#v0.1.1 install
 ```
 
 About 11 minutes later you have a kind cluster with these components, all wired together:
@@ -44,7 +44,7 @@ This project grew out of building that stack by hand and hitting [nine traps](do
 Check your machine first:
 
 ```bash
-npx github:victor-jo/gitops-bakery#v0.1.0 doctor
+npx github:victor-jo/gitops-bakery#v0.1.1 doctor
 ```
 
 ## What gets installed
@@ -124,7 +124,7 @@ The tag-to-live time is short because CI asks Argo CD to refresh right after it 
 ## Uninstall
 
 ```bash
-npx github:victor-jo/gitops-bakery#v0.1.0 uninstall
+npx github:victor-jo/gitops-bakery#v0.1.1 uninstall
 ```
 
 ## Roadmap

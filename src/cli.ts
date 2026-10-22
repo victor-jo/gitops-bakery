@@ -8,7 +8,7 @@ import { run } from "./lib/exec.js";
 import { consoleLogger } from "./lib/log.js";
 import { kubeContext } from "./lib/kube.js";
 import { clusterName } from "./lib/names.js";
-import { bakeryHome } from "./lib/paths.js";
+import { bakeryHome, packageVersion } from "./lib/paths.js";
 import { loadOrCreateSecrets, secretsPath } from "./lib/secrets.js";
 import { ALL_STEPS } from "./steps/index.js";
 import { preflight } from "./steps/preflight.js";
@@ -22,7 +22,7 @@ import { runSteps } from "./steps/runner.js";
 const program = new Command()
   .name("gitops-bakery")
   .description("One-command GitOps lab on kind, wired to Claude Code through a skill and an MCP server")
-  .version("0.1.0");
+  .version(packageVersion());
 
 const ENDPOINTS = [
   ["GitLab", GITLAB_HOST_URL, "root"],

@@ -5,7 +5,7 @@
 [English](README.md)
 
 ```bash
-npx github:victor-jo/gitops-bakery#v0.1.0 install
+npx github:victor-jo/gitops-bakery#v0.1.1 install
 ```
 
 11분쯤 지나면 kind 클러스터 위에 아래 구성요소가 서로 연결된 채로 떠 있다.
@@ -44,7 +44,7 @@ Claude가 GitLab 저장소, CI 파이프라인, Argo CD Application을 만든다
 설치 전에 점검부터 해 볼 수 있다.
 
 ```bash
-npx github:victor-jo/gitops-bakery#v0.1.0 doctor
+npx github:victor-jo/gitops-bakery#v0.1.1 doctor
 ```
 
 ## 설치되는 것
@@ -124,7 +124,7 @@ gitops-bakery mcp                 # stdio MCP 서버 (Claude Code가 실행)
 ## 삭제
 
 ```bash
-npx github:victor-jo/gitops-bakery#v0.1.0 uninstall
+npx github:victor-jo/gitops-bakery#v0.1.1 uninstall
 ```
 
 ## 로드맵
