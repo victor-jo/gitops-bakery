@@ -1,5 +1,5 @@
 // Installs Garage (S3) from its upstream chart, creates GitLab's buckets and key, and stores the object-storage secrets
-import { existsSync } from "node:fs";
+import { existsSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { VERSIONS } from "../lib/config.js";
 import { asset } from "../lib/assets.js";
@@ -17,6 +17,23 @@ export const GITLAB_BUCKETS = [
 
 const KEY_NAME = "gitlab";
 const ENDPOINT_HOST = "garage.gitlab.svc.cluster.local:3900";
+
+export function garageChartReady(dir: string): boolean {
+  return existsSync(join(dir, "script", "helm", "garage", "Chart.yaml"));
+}
+
+// Clone into a temp dir and rename, so an interrupted clone never leaves a half-filled cache that later runs trust
+export async function prepareGarageChart(
+  dir: string,
+  clone: (args: string[]) => Promise<void> = async (args) => void (await run("git", args)),
+): Promise<void> {
+  if (garageChartReady(dir)) return;
+  rmSync(dir, { recursive: true, force: true });
+  const tmp = `${dir}.tmp-${process.pid}`;
+  rmSync(tmp, { recursive: true, force: true });
+  await clone(["clone", "--depth", "1", "--branch", VERSIONS.garage, "https://git.deuxfleurs.fr/Deuxfleurs/garage.git", tmp]);
+  renameSync(tmp, dir);
+}
 
 // Each argument is its own array element, so no shell ever word-splits a bucket list
 export function garageCommands(nodeId: string, buckets: string[]): string[][] {
@@ -101,8 +118,7 @@ export const garageStep: Step = {
   title: "Object storage (Garage)",
   async run() {
     const src = join(bakeryHome(), "cache", `garage-${VERSIONS.garage}`);
-    if (!existsSync(src))
-      await run("git", ["clone", "--depth", "1", "--branch", VERSIONS.garage, "https://git.deuxfleurs.fr/Deuxfleurs/garage.git", src]);
+    await prepareGarageChart(src);
     await helmUpgrade({ release: "garage", chart: join(src, "script/helm/garage"), ns: "gitlab", values: asset("values/garage.yaml") });
 
     const nodeId = (await garage(["node", "id", "-q"])).trim().split("@")[0];

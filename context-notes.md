@@ -44,3 +44,6 @@ Decisions and raw errors, appended as the work goes. The design lives in `docs/s
   - The E2E MCP client times out after 60 s by default (`McpError -32001: Request timed out`). `deleteApp` now waits for the cascade, so the client allows 10 minutes.
   - Delete then immediate re-create: delete took 7 s once the cascade worked, namespace `app-hello` was removed, and the re-created `hello` served on the same port 30010 after 72 s.
   - A hand-made `apps/taken` makes `bakery_create_app taken` fail. `apps/taken` stays (200), the half-created `apps/taken-manifests` is rolled back (404), and nothing is left in state.
+- **v0.1.1 items 3, 4.**
+  - The Garage chart is cloned into `<cache>.tmp-<pid>` and then renamed. A cache without `script/helm/garage/Chart.yaml` is discarded and cloned again.
+  - Before every `helm upgrade --install`, `helm status -o json` is read. Live: a throwaway release whose helm was `kill -9`'d sat in `pending-install`, and `helmUpgrade` stopped with `Helm release stuck is stuck in pending-install … Run: helm uninstall stuck -n bakery-stuck --kube-context kind-toasty-scone`. There is no automatic uninstall, because it could drop PVC-backed data.
