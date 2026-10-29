@@ -1,0 +1,2 @@
+# Only the component code and its requirements belong in the image
+__pycache__

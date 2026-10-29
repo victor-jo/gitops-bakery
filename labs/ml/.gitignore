@@ -1,0 +1,9 @@
+# Local virtualenvs and run outputs of the ML exercises
+.venv
+.venv-kfp
+kfp/out/
+kfp/pipeline/*.yaml
+kfp/smoke/*.yaml
+feast/repo/
+kfp/column_list/
+__pycache__/

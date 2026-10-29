@@ -1,0 +1,3 @@
+# KFP SDK for compiling and submitting pipelines; kept apart from feast, whose pins clash with it
+kfp==2.18.0
+kfp-kubernetes==2.18.0

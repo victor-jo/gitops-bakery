@@ -1,0 +1,163 @@
+--- a/src/read_data/read_data.py
++++ b/src/read_data/read_data.py
+@@ -25,8 +25,10 @@
+         data_output_path (str): Path to save the output Dataset.
+     """
+     # Initialize Minio client
++    # S3_REGION lets S3-compatible stores such as Garage, whose region is not us-east-1, verify the signature
+     client = Minio(
+-        endpoint=minio_host, access_key=access_key, secret_key=secret_key, secure=False
++        endpoint=minio_host, access_key=access_key, secret_key=secret_key, secure=False,
++        region=os.environ.get("S3_REGION"),
+     )
+ 
+     # Ensure the file will be downloaded to a temp directory
+--- a/src/retrieve_features/retrieve_features.py
++++ b/src/retrieve_features/retrieve_features.py
+@@ -12,8 +12,10 @@
+     minio_host: str, access_key: str, secret_key: str, bucket_name: str, file_name: str
+ ) -> FeatureStore:
+     # Download the content of the feature_store.yaml from the GCS bucket
++    # S3_REGION lets S3-compatible stores such as Garage, whose region is not us-east-1, verify the signature
+     client = Minio(
+-        minio_host, access_key=access_key, secret_key=secret_key, secure=False
++        minio_host, access_key=access_key, secret_key=secret_key, secure=False,
++        region=os.environ.get("S3_REGION"),
+     )
+     client.fget_object(bucket_name, file_name, "feature_store.yaml")
+     config_path = Path("./") / "feature_store.yaml"
+--- a/src/run_inference/run_inference.py
++++ b/src/run_inference/run_inference.py
+@@ -13,7 +13,7 @@
+     secret_key: str,
+     model_name: str,
+     model_type: str,
+-    model_stage: str,
++    model_alias: str,
+     mlflow_host: str,
+     input_data: str,  # KFP v2 input artifact
+     data_output: str,  # KFP v2 output artifact
+@@ -26,17 +26,9 @@
+         os.environ["AWS_ENDPOINT_URL"] = minio_host
+     mlflow.set_tracking_uri(mlflow_host)
+     mlflow_client = MlflowClient(mlflow_host)
+-    model_run_id = None
+-    for model in mlflow_client.search_model_versions(f"name='{model_name}'"):
+-        if model.current_stage == model_stage:
+-            model_run_id = model.run_id
+-            break
++    # Registry stages are deprecated since MLflow 2.9, so the serving version is picked by alias
++    model_run_id = mlflow_client.get_model_version_by_alias(model_name, model_alias).run_id
+ 
+-    if not model_run_id:
+-        raise ValueError(
+-            f"No model found in stage {model_stage} for model {model_name}."
+-        )
+-
+     mlflow.artifacts.download_artifacts(
+         f"runs:/{model_run_id}/column_list.pkl", dst_path="column_list"
+     )
+@@ -52,15 +44,15 @@
+ 
+     if model_type == "sklearn":
+         model = mlflow.sklearn.load_model(
+-            model_uri=f"models:/{model_name}/{model_stage}"
++            model_uri=f"models:/{model_name}@{model_alias}"
+         )
+     elif model_type == "xgboost":
+         model = mlflow.xgboost.load_model(
+-            model_uri=f"models:/{model_name}/{model_stage}"
++            model_uri=f"models:/{model_name}@{model_alias}"
+         )
+     elif model_type == "tensorflow":
+         model = mlflow.tensorflow.load_model(
+-            model_uri=f"models:/{model_name}/{model_stage}"
++            model_uri=f"models:/{model_name}@{model_alias}"
+         )
+     else:
+         raise NotImplementedError(f"Model type '{model_type}' is not supported.")
+@@ -89,9 +81,9 @@
+         help="Type of the model (e.g., sklearn, xgboost, tensorflow).",
+     )
+     parser.add_argument(
+-        "--model_stage",
++        "--model_alias",
+         required=True,
+-        help="Stage of the model (e.g., production, staging).",
++        help="Registered model alias to serve (e.g., champion).",
+     )
+     parser.add_argument("--mlflow_host", required=True, help="MLflow tracking URI.")
+     parser.add_argument(
+@@ -109,7 +101,7 @@
+         secret_key=args.secret_key,
+         model_name=args.model_name,
+         model_type=args.model_type,
+-        model_stage=args.model_stage,
++        model_alias=args.model_alias,
+         mlflow_host=args.mlflow_host,
+         input_data=args.input_data,
+         data_output=args.data_output,
+--- a/src/write_data/write_data.py
++++ b/src/write_data/write_data.py
+@@ -1,6 +1,7 @@
+ from minio import Minio
+ import pandas as pd  # Updated imports for KFP v2
+ import argparse
++import os
+ 
+ 
+ def write_data(
+@@ -11,8 +12,10 @@
+     file_name: str,
+     input_data_path: str,  # Updated type hint for KFP v2
+ ):
++    # S3_REGION lets S3-compatible stores such as Garage, whose region is not us-east-1, verify the signature
+     client = Minio(
+-        endpoint=minio_host, access_key=access_key, secret_key=secret_key, secure=False
++        endpoint=minio_host, access_key=access_key, secret_key=secret_key, secure=False,
++        region=os.environ.get("S3_REGION"),
+     )
+ 
+     # Load input data from the artifact path
+--- a/components/run_inference/component.yaml
++++ b/components/run_inference/component.yaml
+@@ -11,7 +11,7 @@
+   type: STRING
+ - name: model_type
+   type: STRING
+-- name: model_stage
++- name: model_alias
+   type: STRING
+ - name: mlflow_host
+   type: STRING
+@@ -38,8 +38,8 @@
+     - {inputValue: model_name}
+     - --model_type
+     - {inputValue: model_type}
+-    - --model_stage
+-    - {inputValue: model_stage}
++    - --model_alias
++    - {inputValue: model_alias}
+     - --mlflow_host
+     - {inputValue: mlflow_host}
+     - --input_data
+--- a/inference_pipeline.py
++++ b/inference_pipeline.py
+@@ -33,7 +33,7 @@
+     feature_list: str,
+     model_name: str,
+     model_type: str,
+-    model_stage: str,
++    model_alias: str,
+     mlflow_host: str,
+     output_bucket: str,
+     output_file_name: str,
+@@ -64,7 +64,7 @@
+         secret_key=secret_key,
+         model_name=model_name,
+         model_type=model_type,
+-        model_stage=model_stage,
++        model_alias=model_alias,
+         mlflow_host=mlflow_host,
+         input_data=retrieve_features_task.outputs["data_output"],
+     )

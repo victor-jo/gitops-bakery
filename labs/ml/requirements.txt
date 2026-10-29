@@ -1,0 +1,11 @@
+# Mac-side packages for the Feast and step-runner exercises (python 3.13); versions match the pipeline image
+feast[redis,aws]==0.67.0
+mlflow==3.16.0
+scikit-learn==1.9.1
+skops==0.16.0
+pandas==2.3.3
+numpy==2.5.4
+pyarrow==25.0.1
+s3fs==2026.9.0
+minio==7.2.20
+boto3==1.43.117
