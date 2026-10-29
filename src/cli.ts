@@ -10,10 +10,10 @@ import { kubeContext } from "./lib/kube.js";
 import { clusterName } from "./lib/names.js";
 import { bakeryHome, packageVersion } from "./lib/paths.js";
 import { loadOrCreateSecrets, secretsPath } from "./lib/secrets.js";
-import { ALL_STEPS } from "./steps/index.js";
+import { installSteps } from "./steps/index.js";
 import { preflight } from "./steps/preflight.js";
 import { doctorSummary, pickUninstallTarget } from "./uninstall.js";
-import { readState } from "./lib/state.js";
+import { readState, rememberOptions } from "./lib/state.js";
 import { removeClaudeIntegration } from "./steps/claude.js";
 import { startMcpServer } from "./mcp/server.js";
 import { statusReport } from "./lib/status.js";
@@ -24,23 +24,39 @@ const program = new Command()
   .description("One-command GitOps lab on kind, wired to Claude Code through a skill and an MCP server")
   .version(packageVersion());
 
-const ENDPOINTS = [
+const BASE_ENDPOINTS: [string, string, string][] = [
   ["GitLab", GITLAB_HOST_URL, "root"],
   ["Harbor", HARBOR_HOST_URL, "admin"],
   ["Argo CD", ARGOCD_HOST_URL, "admin"],
   ["Grafana", GRAFANA_HOST_URL, "admin"],
-] as const;
+];
+
+// The ML names exist only after install --with-ml has read the gateway IPs
+function endpoints(): [string, string, string][] {
+  const hosts = readState()?.ml?.hosts;
+  if (!hosts) return BASE_ENDPOINTS;
+  return [
+    ...BASE_ENDPOINTS,
+    ["MLflow", `http://${hosts.mlflow}`, "-"],
+    ["Jupyter", `http://${hosts.jupyter}`, "token"],
+    ["Feast", `http://${hosts.feast}`, "-"],
+    ["KFP", `http://${hosts.kfp}`, "-"],
+    ["Grafana (name)", `http://${hosts.grafana}`, "admin"],
+  ];
+}
 
 program
   .command("install")
   .description("Create the kind cluster and install the whole stack (safe to rerun)")
   .option("--force", "rerun steps that are already done")
-  .action(async (opts: { force?: boolean }) => {
-    const ctx = { secrets: loadOrCreateSecrets(), log: consoleLogger, arch: process.arch === "arm64" ? "arm64" : "amd64" } as const;
-    console.log(`Cluster: ${clusterName()}`);
-    await runSteps(ALL_STEPS, ctx, { force: opts.force });
+  .option("--with-ml", "also install the ML lab: MLflow, Jupyter, Feast and Kubeflow Pipelines behind cloud-provider-kind (kept on reruns)")
+  .action(async (opts: { force?: boolean; withMl?: boolean }) => {
+    const { ml } = rememberOptions({ ml: opts.withMl });
+    const ctx = { secrets: loadOrCreateSecrets(), log: consoleLogger, arch: process.arch === "arm64" ? "arm64" : "amd64", ml } as const;
+    console.log(`Cluster: ${clusterName()}${ml ? " (with the ML lab)" : ""}`);
+    await runSteps(installSteps(ml), ctx, { force: opts.force });
     console.log("\nDone. Endpoints:");
-    for (const [name, url] of ENDPOINTS) console.log(`  ${name.padEnd(8)} ${url}`);
+    for (const [name, url] of endpoints()) console.log(`  ${name.padEnd(14)} ${url}`);
   });
 
 program
@@ -51,14 +67,14 @@ program
     console.log(`Cluster: ${report.cluster} (context ${kubeContext()})`);
     if (!report.reachable) console.log("  cluster is not reachable");
     for (const c of report.components) console.log(`  ${c.namespace.padEnd(20)} ${c.ready}/${c.total} running`);
-    for (const [name, url] of ENDPOINTS) console.log(`  ${name.padEnd(8)} ${url}`);
+    for (const [name, url] of endpoints()) console.log(`  ${name.padEnd(14)} ${url}`);
   });
 
 program
   .command("credentials")
   .description("Show usernames and where the generated passwords are stored")
   .action(() => {
-    for (const [name, url, user] of ENDPOINTS) console.log(`  ${name.padEnd(8)} ${url}  user: ${user}`);
+    for (const [name, url, user] of endpoints()) console.log(`  ${name.padEnd(14)} ${url}  user: ${user}`);
     console.log(`\nPasswords are in ${secretsPath()} (readable only by you).`);
   });
 
@@ -66,8 +82,8 @@ program
   .command("doctor")
   .description("Check Docker, required CLIs, memory and free ports")
   .action(async () => {
-    const report = await preflight();
     const state = readState();
+    const report = await preflight({ ml: state?.options?.ml });
     const running = state && (await kindClusters()).includes(state.clusterName) ? state.clusterName : undefined;
     console.log(doctorSummary(report, running));
     if (!report.ok) process.exitCode = 1;
