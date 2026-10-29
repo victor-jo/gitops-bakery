@@ -14,6 +14,7 @@ export type Secrets = {
   harborRobotSecret?: string;
   argocdCiToken?: string;
   argocdAdmin?: string;
+  jupyterToken?: string;
 };
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";

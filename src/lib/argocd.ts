@@ -1,5 +1,6 @@
 // Argo CD REST client: session login, application status and on-demand refresh
-export type AppStatus = { sync: string; health: string; revision: string; reconciledAt: string };
+// revisions is filled instead of revision for multi-source Applications
+export type AppStatus = { sync: string; health: string; revision: string; revisions?: string[]; reconciledAt: string };
 
 export class ArgoCD {
   constructor(
@@ -27,12 +28,13 @@ export class ArgoCD {
     if (res.status === 404 || res.status === 403) return null;
     if (!res.ok) throw new Error(`Argo CD get ${name} failed: ${res.status}`);
     const a = (await res.json()) as {
-      status?: { sync?: { status?: string; revision?: string }; health?: { status?: string }; reconciledAt?: string };
+      status?: { sync?: { status?: string; revision?: string; revisions?: string[] }; health?: { status?: string }; reconciledAt?: string };
     };
     return {
       sync: a.status?.sync?.status ?? "Unknown",
       health: a.status?.health?.status ?? "Unknown",
       revision: a.status?.sync?.revision ?? "",
+      revisions: a.status?.sync?.revisions ?? [],
       reconciledAt: a.status?.reconciledAt ?? "",
     };
   }

@@ -9,6 +9,20 @@ export type PreflightReport = { ok: boolean; problems: string[] };
 
 const REQUIRED_TOOLS = ["kind", "helm", "kubectl", "git"];
 const MIN_MEMORY_BYTES = 10 * 1024 ** 3;
+// The ML layer measured about 11.6 GiB across the four nodes; Docker on a 16 GiB machine reports roughly 15.7 GiB
+const MIN_ML_MEMORY_BYTES = 14 * 1024 ** 3;
+
+export function minMemoryBytes(ml: boolean): number {
+  return ml ? MIN_ML_MEMORY_BYTES : MIN_MEMORY_BYTES;
+}
+
+// cloud-provider-kind runs on the host as root (it binds LoadBalancer IPs on lo0), so the installer can only check for it
+export const CLOUD_PROVIDER_KIND_HINT =
+  "cloud-provider-kind is not running; install it with 'brew install cloud-provider-kind' and keep 'sudo cloud-provider-kind' running in another terminal";
+
+async function cloudProviderKindRunning(): Promise<boolean> {
+  return (await run("pgrep", ["-x", "cloud-provider-kind"], { allowFail: true })).code === 0;
+}
 
 export function labPorts(): number[] {
   const ports: number[] = [PORTS.gitlab, PORTS.harbor, PORTS.argocd, PORTS.grafana];
@@ -60,13 +74,15 @@ async function onPath(tool: string): Promise<boolean> {
   return (await run("which", [tool], { allowFail: true })).code === 0;
 }
 
-export async function preflight(opts: { skipPorts?: boolean } = {}): Promise<PreflightReport> {
+export async function preflight(opts: { skipPorts?: boolean; ml?: boolean } = {}): Promise<PreflightReport> {
   const problems: string[] = [];
+  const min = minMemoryBytes(Boolean(opts.ml));
   const info = await run("docker", ["info", "--format", "{{.MemTotal}}"], { allowFail: true }).catch(() => undefined);
   if (!info || info.code !== 0) problems.push("Docker is not reachable; start OrbStack or Docker Desktop");
-  else if (Number(info.stdout.trim()) < MIN_MEMORY_BYTES)
-    problems.push(`Docker has ${(Number(info.stdout) / 1024 ** 3).toFixed(1)} GiB memory; at least 10 GiB is needed`);
+  else if (Number(info.stdout.trim()) < min)
+    problems.push(`Docker has ${(Number(info.stdout) / 1024 ** 3).toFixed(1)} GiB memory; at least ${min / 1024 ** 3} GiB is needed${opts.ml ? " with --with-ml" : ""}`);
   for (const tool of REQUIRED_TOOLS) if (!(await onPath(tool))) problems.push(`'${tool}' is not on PATH (brew install ${tool === "kubectl" ? "kubernetes-cli" : tool})`);
+  if (opts.ml && !(await cloudProviderKindRunning())) problems.push(CLOUD_PROVIDER_KIND_HINT);
   if (!opts.skipPorts && shouldCheckPorts(await kindClusters(), clusterName())) problems.push(...portProblems(await checkPorts()));
   return { ok: problems.length === 0, problems };
 }
@@ -74,8 +90,8 @@ export async function preflight(opts: { skipPorts?: boolean } = {}): Promise<Pre
 export const preflightStep: Step = {
   id: "preflight",
   title: "Preflight checks",
-  async run() {
-    const report = await preflight();
+  async run(ctx) {
+    const report = await preflight({ ml: ctx.ml });
     if (!report.ok) throw new Error(`Preflight failed:\n- ${report.problems.join("\n- ")}`);
   },
 };

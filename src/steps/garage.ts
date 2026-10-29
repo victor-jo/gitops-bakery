@@ -95,7 +95,7 @@ export function objectStorageSecrets(key: { id: string; secret: string }): { con
   };
 }
 
-async function garage(args: string[], allowFail = false): Promise<string> {
+export async function garage(args: string[], allowFail = false): Promise<string> {
   try {
     return await kubectl(["-n", "gitlab", "exec", "garage-0", "-c", "garage", "--", "/garage", ...args]);
   } catch (e) {
