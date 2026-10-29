@@ -1,0 +1,13 @@
+# JupyterLab manifests; the notebook patch script ships as a generated ConfigMap so its edits roll the pod
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: mlflow
+resources:
+  - deployment.yaml
+  - ingress.yaml
+  - pvc.yaml
+  - service.yaml
+configMapGenerator:
+  - name: jupyter-notebook
+    files:
+      - patch_notebook.py

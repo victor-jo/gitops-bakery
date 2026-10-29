@@ -1,0 +1,9 @@
+# Grafana by name through the monitoring namespace gateway IP from cloud-provider-kind; committed only by install --with-ml
+grafana:
+  ingress:
+    enabled: true
+    ingressClassName: cloud-provider-kind
+    hosts:
+      - {{grafanaHost}}
+    path: /
+    pathType: Prefix

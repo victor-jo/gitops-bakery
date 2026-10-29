@@ -12,8 +12,11 @@ spec:
       targetRevision: 92.10.1
       helm:
         releaseName: monitoring
+        # values-ingress.yaml exists only in labs installed with --with-ml
+        ignoreMissingValueFiles: true
         valueFiles:
           - $values/monitoring/values.yaml
+          - $values/monitoring/values-ingress.yaml
     - repoURL: {{gitlabUrl}}/devops/platform.git
       targetRevision: main
       ref: values

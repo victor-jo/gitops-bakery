@@ -1,0 +1,23 @@
+# Feast Operator v0.67.0 installed from the pinned upstream install manifest kept in devops/platform
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: feast-operator
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: {{gitlabUrl}}/devops/platform.git
+    targetRevision: main
+    path: feast-operator
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: feast-operator-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # The FeatureStore CRD exceeds the annotation size limit of client-side apply
+      - ServerSideApply=true

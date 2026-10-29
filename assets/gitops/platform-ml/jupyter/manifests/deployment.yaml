@@ -1,0 +1,73 @@
+# JupyterLab wired to the in-cluster MLflow server and Garage S3, reachable through its Ingress
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jupyter
+  namespace: mlflow
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: jupyter}
+  template:
+    metadata:
+      labels: {app: jupyter}
+    spec:
+      # The Service named jupyter would otherwise inject JUPYTER_PORT=tcp://..., which Jupyter reads as its port number
+      enableServiceLinks: false
+      securityContext:
+        fsGroup: 100
+      initContainers:
+        - name: seed
+          image: quay.io/jupyter/scipy-notebook:lab-4.6.4
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              # Upstream example data and notebook, pinned to one commit; the lab's edits are applied by patch_notebook.py
+              SRC=https://raw.githubusercontent.com/practical-mlops/chapter-4/b67a8228336781c933dd68bb7dc520bd484c3371
+              NB=data_exploration_and_model_training.ipynb
+              mkdir -p /work/data /work/mlflow
+              [ -f /work/data/income_data.csv ] || curl -fsSL -o /work/data/income_data.csv $SRC/data/income_data.csv
+              if [ ! -f /work/mlflow/$NB ]; then
+                curl -fsSL -o /tmp/$NB $SRC/mlflow/$NB
+                python /notebook/patch_notebook.py /tmp/$NB /work/mlflow/$NB
+              fi
+          volumeMounts:
+            - {name: work, mountPath: /work}
+            - {name: notebook, mountPath: /notebook}
+      containers:
+        - name: jupyter
+          image: quay.io/jupyter/scipy-notebook:lab-4.6.4
+          command:
+            - sh
+            - -c
+            - pip install -q mlflow==3.16.0 plotnine minio xgboost && exec start-notebook.py
+          env:
+            - name: JUPYTER_TOKEN
+              valueFrom: {secretKeyRef: {name: jupyter-token, key: token}}
+            - {name: MLFLOW_TRACKING_URI, value: "http://mlflow.mlflow.svc.cluster.local"}
+            - {name: MLFLOW_DISABLE_AGENT_HINT, value: "1"}
+            - {name: GARAGE_ENDPOINT, value: "garage.gitlab.svc.cluster.local:3900"}
+            - name: GARAGE_ACCESS_KEY
+              valueFrom: {secretKeyRef: {name: mlflow-s3, key: AWS_ACCESS_KEY_ID}}
+            - name: GARAGE_SECRET_KEY
+              valueFrom: {secretKeyRef: {name: mlflow-s3, key: AWS_SECRET_ACCESS_KEY}}
+          ports:
+            - {containerPort: 8888}
+          startupProbe:
+            tcpSocket: {port: 8888}
+            periodSeconds: 10
+            failureThreshold: 90
+          resources:
+            requests: {cpu: 500m, memory: 1Gi}
+            limits: {memory: 3Gi}
+          volumeMounts:
+            - {name: work, mountPath: /home/jovyan/work}
+      volumes:
+        - name: work
+          persistentVolumeClaim: {claimName: jupyter-work}
+        - name: notebook
+          configMap: {name: jupyter-notebook}

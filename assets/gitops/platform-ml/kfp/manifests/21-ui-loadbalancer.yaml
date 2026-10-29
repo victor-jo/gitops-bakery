@@ -1,0 +1,15 @@
+# Exposes the Kubeflow Pipelines UI through a LoadBalancer IP handed out by cloud-provider-kind on the Mac
+apiVersion: v1
+kind: Service
+metadata:
+  name: ml-pipeline-ui-lb
+  namespace: kubeflow
+spec:
+  type: LoadBalancer
+  selector:
+    app: ml-pipeline-ui
+    application-crd-id: kubeflow-pipelines
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000

@@ -1,0 +1,25 @@
+# FeatureStore resource that runs the Feast online feature server through the operator
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: feast-store
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: {{gitlabUrl}}/devops/platform.git
+    targetRevision: main
+    path: feast/manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: feast
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # On a fresh lab the FeatureStore CRD arrives with the feast-operator app, possibly after this app's first sync
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff: {duration: 15s, factor: 2, maxDuration: 3m}

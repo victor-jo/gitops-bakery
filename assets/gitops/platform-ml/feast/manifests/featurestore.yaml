@@ -1,0 +1,36 @@
+# Always-on Feast online feature server reading the existing Garage registry and Valkey db 1
+apiVersion: feast.dev/v1
+kind: FeatureStore
+metadata:
+  name: income-features
+  namespace: feast
+spec:
+  feastProject: my_feature_repo
+  # The operator defaults to Kubernetes RBAC auth; this lab server is only reachable inside the cluster, so auth is off
+  authz:
+    noAuth: true
+  services:
+    # The registry already holds the applied features; an init-time apply would overwrite it with sample ones
+    runFeastApplyOnInit: false
+    registry:
+      local:
+        persistence:
+          file:
+            path: s3://feature-registry/registry_local.db
+    onlineStore:
+      persistence:
+        store:
+          type: redis
+          secretRef:
+            name: feast-online-store
+      server:
+        envFrom:
+          - secretRef:
+              name: feast-s3
+        env:
+          - name: FEAST_S3_ENDPOINT_URL
+            value: http://garage.gitlab.svc.cluster.local:3900
+          - name: AWS_ENDPOINT_URL
+            value: http://garage.gitlab.svc.cluster.local:3900
+          - name: AWS_DEFAULT_REGION
+            value: garage
