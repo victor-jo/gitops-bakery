@@ -145,7 +145,8 @@ gitops-bakery mcp                 # stdio MCP 서버 (Claude Code가 실행)
 | `bakery_create_app` → 앱 응답 | 92초 |
 | 소스 push → 새 버전 반영 | 45–72초 |
 | CI 태그 커밋 → 새 버전 반영 | 4–13초 |
-| 노드 4대 메모리 합계 | 약 7.8 GiB (`--with-ml`이면 약 11.6 GiB) |
+| 노드 4대 메모리 합계 | 약 7.8 GiB (`--with-ml`이면 11–12 GiB) |
+| 처음 설치 (`--with-ml`) | 1001초 |
 
 태그 커밋 뒤 반영이 빠른 건 CI가 push 직후 Argo CD에 새로고침을 직접 요청하기 때문이다. GitLab webhook으로는 안 된다. webhook에는 `http://localhost/...` 주소가 실리는데, Argo CD가 지켜보는 저장소 주소는 클러스터 안 주소라 서로 맞지 않는다. 자세한 내용은 [docs/architecture.md](docs/architecture.md)에 있다.
 

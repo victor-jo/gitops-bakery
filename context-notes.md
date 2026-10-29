@@ -88,3 +88,9 @@ Decisions and raw errors, appended as the work goes. The design lives in `docs/s
   - Attempt 1: after `uninstall` of `crusty-focaccia`, preflight refused with `Port 80 on 127.0.0.1 is already in use`. `netstat -anv` showed `cloud-provider-k:63428` still listening on 192.168.165.7–10:80 for the deleted cluster's gateways (its envoy containers were gone).
   - A first fix ignored those specific-address listeners. Attempt 2 then passed preflight, but OrbStack never opened 127.0.0.1:80: `docker port` listed `30080/tcp -> 127.0.0.1:80`, yet `nc` was closed, while the node answered 200 on 30080. GitLab readiness timed out with `fetch failed`.
   - So the wildcard check was right. The fix was dropped (never pushed), and preflight now names the remedy instead: restart `sudo cloud-provider-kind`.
+- **Fresh install, attempt 3, PASSED** (cluster `honeyed-bagel`, after restarting cloud-provider-kind).
+  - `install --with-ml` took 1001 s.
+  - Every Application is Synced/Healthy. The gateways got new IPs (.6, .7, .8, .9), so the names differ from the old lab: `mlflow.192-168-165-6.sslip.io` and so on.
+  - Names answer: mlflow 200, jupyter 302, feast 404 on `/` (its API is under `/get-online-features`), kfp 200, grafana 302.
+  - The online store has 30,162 keys, and the Harbor image is tagged 0.1.0. A second install skipped every step.
+  - Memory: 1.78 + 3.39 + 4.19 + 1.56 = 10.9 GiB.

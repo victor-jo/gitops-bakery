@@ -141,7 +141,8 @@ gitops-bakery mcp                 # MCP server on stdio (Claude Code runs this)
 | `bakery_create_app` → app serving | 92 s |
 | Source push → new version live | 45–72 s |
 | CI tag commit → new version live | 4–13 s |
-| Memory across the 4 nodes | about 7.8 GiB (about 11.6 GiB with `--with-ml`) |
+| Memory across the 4 nodes | about 7.8 GiB (11–12 GiB with `--with-ml`) |
+| Fresh `install --with-ml` | 1001 s |
 
 The tag-to-live time is short because CI asks Argo CD to refresh right after it pushes. GitLab's webhooks don't help here. They carry `http://localhost/...` URLs, which never match the in-cluster repo URLs Argo CD tracks. See [docs/architecture.md](docs/architecture.md).
 
