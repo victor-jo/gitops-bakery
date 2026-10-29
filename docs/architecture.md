@@ -44,3 +44,23 @@ The CI refresh call does match, and it brings the CI-tag-to-live time down to 4�
 |---|---|---|---|
 | Host | http://localhost | http://localhost:30001 | http://localhost:30002 |
 | Pods and nodes | http://gitlab-webservice-default.gitlab.svc.cluster.local:8181 | `<cluster>-control-plane:30001` (HTTP, trusted through `hosts.toml`) | http://argocd-server.argocd.svc.cluster.local |
+
+## The ML layer (`install --with-ml`)
+
+```text
+Mac browser ──> mlflow.<ip>.sslip.io ──> lo0 alias (cloud-provider-kind, sudo) ──> envoy gateway ──> Ingress ──> Service
+                 one gateway IP per namespace: mlflow (MLflow, Jupyter), feast, kubeflow, monitoring
+```
+
+1. **`ml-preflight`.** Checks for at least 14 GiB of Docker memory and a running `cloud-provider-kind`. It runs as its own step because a lab installed without the flag already has `preflight` marked done.
+2. **`ml-storage`.** Creates six Garage buckets and four keys, each key with only its consumer's buckets, plus six Secrets. Secret values stay out of git.
+3. **`ml-gateways`.** Waits for each namespace's gateway IP, using a hostless probe Ingress where needed, and stores the sslip.io names in `state.json`.
+4. **`ml-platform`.** Renders `assets/gitops/platform-ml/` with those names and commits only the changed files to `devops/platform`, together with the base set. It then waits for `feast-operator`, `mlflow`, `jupyter`, `feast-store`, `kfp` and `monitoring`.
+5. **`ml-seed`.** Two Jobs run the Feast feature-server image:
+   - `feast/ml-seed-features` uploads the example parquet files, applies both registries and materializes 30,162 users into Valkey db 1;
+   - `kubeflow/ml-seed-inference` uploads the scoring input.
+6. **`ml-kfp-image`.** Builds `labs/ml/kfp/pipeline/src` for the host architecture and pushes it to Harbor's public `kfp` project. It uses a throwaway Docker config, so the Harbor login never lands in `~/.docker`.
+
+The upstream example code, data and notebook are never copied into this repo. Jobs and scripts fetch them at a pinned commit, and the lab's changes live as patches (`patch_notebook.py`, `labs/ml/kfp/upstream/lab.patch`).
+
+Garage (3900) and Valkey (6379) have no name. They are storage, not UIs. Mac-side Feast or AWS CLI work goes through `labs/ml/feast/pf.sh`.

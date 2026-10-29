@@ -40,6 +40,7 @@ This project grew out of building that stack by hand and hitting [nine traps](do
 | CLIs on `PATH` | `kind`, `helm`, `kubectl`, `git`, Node.js ≥ 20 |
 | Free ports on 127.0.0.1 | 80, 30001, 30002, 30004, 30010–30019 |
 | Optional | [Claude Code](https://claude.com/claude-code) (`claude` on `PATH`) for the skill and MCP server |
+| For `--with-ml` | **at least 14 GiB** for Docker, and [cloud-provider-kind](https://github.com/kubernetes-sigs/cloud-provider-kind) running as `sudo cloud-provider-kind` |
 
 Check your machine first:
 
@@ -85,6 +86,29 @@ Change hello's root endpoint to also return the current time, push it, and tell 
 
 Open Grafana at http://localhost:30004. Its home dashboard counts requests to every app.
 
+## ML lab (optional)
+
+```bash
+brew install cloud-provider-kind
+sudo cloud-provider-kind            # keep it running in another terminal
+npx github:victor-jo/gitops-bakery install --with-ml
+```
+
+This adds MLflow, JupyterLab, Feast and Kubeflow Pipelines 2.18 on top of the base lab. They are delivered the same way, as Argo CD Applications in `devops/platform`. Each UI gets a name instead of a port:
+
+| UI | Name |
+|---|---|
+| MLflow, JupyterLab | `mlflow.<ip>.sslip.io`, `jupyter.<ip>.sslip.io` |
+| Feast online server | `feast.<ip>.sslip.io` |
+| KFP | `kfp.<ip>.sslip.io` |
+| Grafana | `grafana.<ip>.sslip.io` (the NodePort stays) |
+
+`<ip>` is the gateway address cloud-provider-kind gives that namespace, written with dashes. The installer reads it and commits the names, and `status` prints them.
+
+The installer also creates the Garage buckets and keys and the Secrets. In-cluster Jobs seed the example datasets and both Feast registries and fill the online store with 30,162 users, so the Mac needs no Python for setup. It also builds the pipeline image for your architecture and pushes it to Harbor.
+
+Training, choosing the `champion` model and running the pipeline are left as exercises in [labs/ml](labs/ml/README.md). The flag is remembered, so a later plain `install` keeps the ML layer. An existing lab gains it by running `install --with-ml` once.
+
 ## MCP tools
 
 | Tool | What it does |
@@ -99,7 +123,7 @@ Tool output never contains passwords or tokens. Details are in [docs/mcp-tools.m
 ## Commands
 
 ```
-gitops-bakery install [--force]   # create or resume the lab (safe to rerun)
+gitops-bakery install [--force] [--with-ml]   # create or resume the lab (safe to rerun)
 gitops-bakery status              # pod readiness and URLs
 gitops-bakery credentials         # usernames and where the passwords are
 gitops-bakery doctor              # preflight checks only
@@ -117,7 +141,7 @@ gitops-bakery mcp                 # MCP server on stdio (Claude Code runs this)
 | `bakery_create_app` → app serving | 92 s |
 | Source push → new version live | 45–72 s |
 | CI tag commit → new version live | 4–13 s |
-| Memory across the 4 nodes | about 7.8 GiB |
+| Memory across the 4 nodes | about 7.8 GiB (about 11.6 GiB with `--with-ml`) |
 
 The tag-to-live time is short because CI asks Argo CD to refresh right after it pushes. GitLab's webhooks don't help here. They carry `http://localhost/...` URLs, which never match the in-cluster repo URLs Argo CD tracks. See [docs/architecture.md](docs/architecture.md).
 
@@ -133,7 +157,8 @@ npx github:victor-jo/gitops-bakery#v0.1.1 uninstall
 
 ## Roadmap
 
-- ML components: MLflow, KServe, and a "train → serve" template
+- Serving the `champion` model with KServe, and a "train → serve" template
+- One shared gateway for every ML name, so a single IP serves them all
 - Codex, Cursor and Gemini CLI integration
 - Linux (amd64) support with CI-run end-to-end tests
 - npm release

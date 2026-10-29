@@ -56,3 +56,31 @@ Decisions and raw errors, appended as the work goes. The design lives in `docs/s
   - After the review fixes, the upgrade path was checked: rerunning `install` on that lab ran only `claude@0.1.1` (state now holds both `claude` and `claude@0.1.1`).
   - E2E with the final build (cluster `seeded-pita`) PASSED: install 679 s, create to serving 104 s, source to live 55 s, tag to live 4 s, memory about 7.9 GiB.
   - The user's lab is now `crusty-focaccia`, and the MCP entry is `✔ Connected`.
+
+# --with-ml (2026-10-29, plan: docs/superpowers/plans/2026-10-29-with-ml.md)
+
+- **Source of the manifests.** The hand-built `devops/platform` (HEAD `cbe2c03`) was the only copy of the ML YAML. It moved into `assets/gitops/platform-ml/`, and the lab's old main is kept in GitLab as branch `backup/pre-with-ml`.
+- **No upstream example code in the repo.** `practical-mlops/chapter-4` and `chapter-5` have no license (GitHub API `license: null`). The user chose fetch-and-patch:
+  - The Jupyter init container fetches the notebook at commit `b67a822…` and runs `patch_notebook.py`, which stops when an expected line is missing.
+  - `labs/ml/kfp/upstream/fetch.sh` fetches the chapter-5 step code at `332915b…` and `git apply`s `lab.patch` (163 lines).
+  - The Feast definitions were rewritten as the lab's own `assets/ml/seed/definitions.py`, with explicit `timestamp_field` and `ValueType.STRING`.
+  - The pipeline code (`labs/ml/kfp/pipeline`) was the lab's own already.
+- **NodePorts 30011, 30012 and 30019 dropped.** They sat in the 30010–30019 range that `bakery_create_app` allocates. `ml-platform` deletes the three files from older labs.
+- **Gateway probe.** Tested on `crusty-focaccia` in a scratch namespace:
+  - The gateway got 192.168.165.11 about 6 s after a hostless Ingress was created.
+  - Deleting that Ingress kept the IP, and deleting every Ingress still kept the gateway.
+  - So the probe can be removed once the real Ingresses exist.
+- **Grafana ingress.** `monitoring.yaml` lists `values-ingress.yaml` with `ignoreMissingValueFiles: true`. Only `--with-ml` commits that file.
+- **Memory floor.** The four nodes used 11.6 GiB with the ML layer running (docker stats: 4.07 + 3.47 + 1.63 + 2.44). Docker reports 15.66 GiB on this 16 GiB OrbStack, so the `--with-ml` floor is 14 GiB.
+- **Live upgrade 1** (`install --with-ml` on `crusty-focaccia`):
+  - `ml-preflight`, `ml-storage` and `ml-gateways` passed, and the gateways kept .8/.9/.7/.10, so the names are unchanged.
+  - The seed Job logged `online store keys in Valkey db 1: 30162`.
+  - `ml-kfp-image` failed with `Harbor HEAD /projects?project_name=kfp failed: 502`. harbor-database had been killed by its 1 s liveness probe (`x44 over 28h`, so before this run as well). The step now waits for Harbor health first.
+- **Bug found live.** `ml-platform` returned while kfp still showed revision `cbe2c03`. Right after a commit, apps report Synced for the previous revision. The wait now requires `revision` (or `revisions` for multi-source) to equal the branch head (`syncedAt`).
+- **Flaky test on main as well.** An `EPIPE` unhandled error from `test/unit/claude.test.ts` happens in 3 of 8 runs on main and 5 of 8 on the branch. All tests still pass. It is unrelated to this work and left alone.
+- **Live upgrade 2** (plain `install`, flag remembered). Only `ml-platform` (unmarked by hand to retest it) and `ml-kfp-image` ran.
+  - `ml-platform` waited until every app reported head `d05fa4d`. The NodePorts 30011, 30012 and 30019 are gone.
+  - Harbor `kfp/income-pipeline` has a new arm64 artifact.
+  - Names: mlflow 200, jupyter 302, kfp 200, grafana 302. Feast `get-online-features` returned `" Male"` PRESENT.
+  - From `labs/ml`, run `dcc2f34d` SUCCEEDED, and `kfp/run_local.sh` produced 30,162 rows. `feast/retrieve.py` returned the same historical and online row, after `AWS_DEFAULT_REGION=garage` was added (without it: `S3RegistryBucketForbiddenAccess`).
+  - Not run: `labs/ml/mlflow/train.sh`. It would add runs and a model version to the user's MLflow. `set_champion.sh 2` was run, and it kept the existing alias.

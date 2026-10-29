@@ -20,3 +20,25 @@ The stack was first built by hand. These are the places where it broke, each wit
 | 14 | macOS refuses unprivileged binds below 1024 | preflight reported port 80 as busy (`EACCES`) while nothing listened | Only `EADDRINUSE` counts as busy |
 | 15 | A multi-arch tag cannot test amd64 emulation | `amd64/alpine:3.22`: `no match for platform in manifest` on arm64 nodes | The probe pins the linux/amd64 manifest by digest, like Harbor's single-arch images |
 | 16 | Garage buckets cannot be listed before a layout exists | `ListBuckets returned InternalError (500): Internal error: Layout not ready` | Apply the layout first, then check buckets and keys |
+
+## The ML layer (`install --with-ml`)
+
+These came from building MLflow, Feast and Kubeflow Pipelines by hand on the same lab before `--with-ml` existed.
+
+| # | Trap | What it looked like | Handled by |
+|---|---|---|---|
+| 17 | Garage signs with region `garage`, S3 clients default to `us-east-1` | MinIO client: `AuthorizationHeaderMalformed`; the KFP API server defaults `ObjectStoreConfig.Region` to us-east-1 | `region` set everywhere: `OBJECTSTORECONFIG_REGION`, launcher providers, Argo `artifactRepository`, `AWS_DEFAULT_REGION`, `S3_REGION` (`assets/gitops/platform-ml/kfp/manifests/patches`, `labs/ml/kfp/upstream/lab.patch`) |
+| 18 | MLflow registry stages are deprecated | upstream inference code looked for stage `Production`, which the registered model never had | The pipeline loads `models:/<name>@champion`; `labs/ml/mlflow/set_champion.sh` sets the alias |
+| 19 | MLflow 3 checks Host and Origin | `403 Cross-origin request blocked` for `POST /ajax-api/2.0/mlflow/experiments/search`, so the UI on its domain showed an empty list | `MLFLOW_SERVER_ALLOWED_HOSTS` and `MLFLOW_SERVER_CORS_ALLOWED_ORIGINS` are rendered with the sslip.io name (`mlflow/values.yaml`) |
+| 20 | A Service named `jupyter` injects `JUPYTER_PORT=tcp://…` | Jupyter reads that variable as its port number and does not start | `enableServiceLinks: false` on the Jupyter pod |
+| 21 | Feast Operator 0.67 defaults to Kubernetes auth | the online server answered 401 | `authz.noAuth: true` on the FeatureStore |
+| 22 | The operator's default `runFeastApplyOnInit: true` | an init-time apply of sample features would overwrite the real registry | `runFeastApplyOnInit: false`; the seed Job owns `feast apply` |
+| 23 | `feast apply` opens parquet files it cannot reach | without an endpoint it went to real AWS, and with `--skip-source-validation` it still opened files to infer the timestamp and entity type | Definitions state `timestamp_field` and `ValueType.STRING`, and two registries are kept: one with the Mac tunnel address, one with Garage's in-cluster address (`assets/ml/seed`) |
+| 24 | Large CRDs break client-side apply | the FeatureStore and Argo Workflows CRDs exceed the `last-applied-configuration` annotation limit | `ServerSideApply=true` on `feast-operator` and `kfp` |
+| 25 | `kfp-metadata-writer:2.18.0` is an amd64-only image index | `no match for platform in manifest` on arm64 nodes | The rendered manifest pins its amd64 digest (trap 15's fix); `scripts/render-kfp.sh` says how to redo it |
+| 26 | Several `$patch: delete` documents in one file | kustomize inside kubectl 1.33 panicked | One inline delete patch per SeaweedFS object (`kfp/manifests/kustomization.yaml`) |
+| 27 | The KFP UI only previews allow-listed stores | `400 Artifact store endpoint is not allowed; add its exact origin to ALLOWED_ARTIFACT_ENDPOINTS` | `ALLOWED_ARTIFACT_ENDPOINTS` in `pipeline-install-config` |
+| 28 | `kfp component build` always builds amd64 | `--platform linux/arm64` still produced an amd64 image | The installer runs `docker build --platform linux/<host arch>` on the Dockerfile KFP generated |
+| 29 | KFP installs the `applications.app.k8s.io` CRD | `kubectl get app` started returning KFP objects instead of Argo CD Applications | The installer talks to Argo CD through its API, never through the short name |
+| 30 | Hand-made NodePorts sat in the app range | Feast 30011, KFP 30012 and Jupyter 30019 would collide with `bakery_create_app` ports | ML UIs are reached only by Ingress name; `ml-platform` removes those NodePort files from older labs |
+| 31 | sslip.io names carry the gateway IP | a new cluster gets different gateway IPs, so names copied from another lab do not resolve to it | The `ml-gateways` step reads each namespace's gateway IP before rendering any name; the gateway keeps its IP after its last Ingress is deleted, so the probe Ingress can go |
