@@ -155,6 +155,8 @@ Run `install` with the new tag, for example `npx github:victor-jo/gitops-bakery#
 npx github:victor-jo/gitops-bakery#v0.1.1 uninstall
 ```
 
+With `--with-ml`, restart `sudo cloud-provider-kind` afterwards. It keeps listening on port 80 for the deleted cluster's LoadBalancers, and the next install could not publish GitLab on port 80.
+
 ## Roadmap
 
 - Serving the `champion` model with KServe, and a "train → serve" template

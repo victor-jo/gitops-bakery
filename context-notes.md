@@ -84,3 +84,7 @@ Decisions and raw errors, appended as the work goes. The design lives in `docs/s
   - Names: mlflow 200, jupyter 302, kfp 200, grafana 302. Feast `get-online-features` returned `" Male"` PRESENT.
   - From `labs/ml`, run `dcc2f34d` SUCCEEDED, and `kfp/run_local.sh` produced 30,162 rows. `feast/retrieve.py` returned the same historical and online row, after `AWS_DEFAULT_REGION=garage` was added (without it: `S3RegistryBucketForbiddenAccess`).
   - Not run: `labs/ml/mlflow/train.sh`. It would add runs and a model version to the user's MLflow. `set_champion.sh 2` was run, and it kept the existing alias.
+- **Fresh install, attempts 1–2.**
+  - Attempt 1: after `uninstall` of `crusty-focaccia`, preflight refused with `Port 80 on 127.0.0.1 is already in use`. `netstat -anv` showed `cloud-provider-k:63428` still listening on 192.168.165.7–10:80 for the deleted cluster's gateways (its envoy containers were gone).
+  - A first fix ignored those specific-address listeners. Attempt 2 then passed preflight, but OrbStack never opened 127.0.0.1:80: `docker port` listed `30080/tcp -> 127.0.0.1:80`, yet `nc` was closed, while the node answered 200 on 30080. GitLab readiness timed out with `fetch failed`.
+  - So the wildcard check was right. The fix was dropped (never pushed), and preflight now names the remedy instead: restart `sudo cloud-provider-kind`.

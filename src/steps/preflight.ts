@@ -66,8 +66,14 @@ export async function checkPorts(isFree: (port: number) => Promise<boolean> = is
   return busy;
 }
 
-export function portProblems(busy: number[]): string[] {
-  return busy.map((p) => `Port ${p} on 127.0.0.1 is already in use; free it before installing`);
+// cloud-provider-kind keeps its LoadBalancer listeners on port 80 after their cluster is deleted, and Docker then cannot
+// publish 127.0.0.1:80 for GitLab, so a busy port 80 next to a running cloud-provider-kind gets the exact remedy
+export const STALE_LB_HINT =
+  "cloud-provider-kind still holds port 80 for a deleted cluster's LoadBalancers; stop it (Ctrl-C) and start 'sudo cloud-provider-kind' again";
+
+export function portProblems(busy: number[], cloudProviderKind = false): string[] {
+  return busy.map((p) =>
+    p === 80 && cloudProviderKind ? STALE_LB_HINT : `Port ${p} on 127.0.0.1 is already in use; free it before installing`);
 }
 
 async function onPath(tool: string): Promise<boolean> {
@@ -83,7 +89,7 @@ export async function preflight(opts: { skipPorts?: boolean; ml?: boolean } = {}
     problems.push(`Docker has ${(Number(info.stdout) / 1024 ** 3).toFixed(1)} GiB memory; at least ${min / 1024 ** 3} GiB is needed${opts.ml ? " with --with-ml" : ""}`);
   for (const tool of REQUIRED_TOOLS) if (!(await onPath(tool))) problems.push(`'${tool}' is not on PATH (brew install ${tool === "kubectl" ? "kubernetes-cli" : tool})`);
   if (opts.ml && !(await cloudProviderKindRunning())) problems.push(CLOUD_PROVIDER_KIND_HINT);
-  if (!opts.skipPorts && shouldCheckPorts(await kindClusters(), clusterName())) problems.push(...portProblems(await checkPorts()));
+  if (!opts.skipPorts && shouldCheckPorts(await kindClusters(), clusterName())) problems.push(...portProblems(await checkPorts(), await cloudProviderKindRunning()));
   return { ok: problems.length === 0, problems };
 }
 

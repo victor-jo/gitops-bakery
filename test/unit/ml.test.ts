@@ -11,7 +11,7 @@ import { buildArgs } from "../../src/steps/ml/kfp-image.js";
 import { ML_APPS, STALE_PLATFORM_FILES, changedFiles, mlPlatformFiles, syncedAt } from "../../src/steps/ml/platform.js";
 import { SEED_JOBS, seedConfigMap, seedJob } from "../../src/steps/ml/seed.js";
 import { ML_BUCKETS, ML_KEYS, grantCommands, mlSecrets } from "../../src/steps/ml/storage.js";
-import { minMemoryBytes } from "../../src/steps/preflight.js";
+import { STALE_LB_HINT, minMemoryBytes, portProblems } from "../../src/steps/preflight.js";
 import { useTempHome } from "../helpers/home.js";
 
 useTempHome();
@@ -163,4 +163,9 @@ test("the repo keeps no upstream example code, only the lab's patches and fetch 
   const labFiles = walk(assetPath("labs", "ml"));
   for (const f of labFiles) expect(f, f).not.toMatch(/\/(src\/read_data|src\/run_inference|data_exploration_and_model_training\.ipynb)/);
   expect(readFileSync(assetPath("labs", "ml", "kfp", "upstream", "fetch.sh"), "utf8")).toMatch(/COMMIT=[0-9a-f]{40}/);
+});
+
+test("a busy port 80 next to a running cloud-provider-kind points at its stale LoadBalancer listeners", () => {
+  expect(portProblems([80, 30001], true)).toEqual([STALE_LB_HINT, "Port 30001 on 127.0.0.1 is already in use; free it before installing"]);
+  expect(portProblems([80], false)[0]).toContain("Port 80 on 127.0.0.1 is already in use");
 });

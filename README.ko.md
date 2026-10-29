@@ -159,6 +159,8 @@ gitops-bakery mcp                 # stdio MCP 서버 (Claude Code가 실행)
 npx github:victor-jo/gitops-bakery#v0.1.1 uninstall
 ```
 
+`--with-ml`로 설치했다면 삭제 뒤 `sudo cloud-provider-kind`를 껐다 다시 켠다. 클러스터가 지워져도 cloud-provider-kind는 그 클러스터 LoadBalancer의 80번 포트를 계속 잡고 있다. 그대로 두면 다음 설치에서 GitLab이 80번 포트를 쓰지 못한다.
+
 ## 로드맵
 
 - KServe로 `champion` 모델 서빙, "학습 → 서빙" 템플릿
