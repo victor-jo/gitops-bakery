@@ -20,7 +20,7 @@ function walk(dir: string): string[] {
 }
 
 // Grafana dashboards use {{label}} legends of their own, so JSON files are committed verbatim
-export function gitopsFiles(repo: "platform" | "service", vars: Record<string, string>): RepoFile[] {
+export function gitopsFiles(repo: "platform" | "service" | "platform-ml", vars: Record<string, string>): RepoFile[] {
   const root = assetPath("assets", "gitops", repo);
   return walk(root)
     .sort()

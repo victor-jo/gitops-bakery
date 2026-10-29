@@ -1,0 +1,15 @@
+# Single-instance PostgreSQL 17 cluster that holds MLflow's tracking metadata
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: mlflow-db
+  namespace: mlflow
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  storage:
+    size: 2Gi
+  bootstrap:
+    initdb:
+      database: mlflow
+      owner: mlflow

@@ -1,0 +1,19 @@
+# Serves the KFP UI by name; sslip.io resolves the host to the kubeflow namespace gateway IP from cloud-provider-kind
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kfp-ui
+  namespace: kubeflow
+spec:
+  ingressClassName: cloud-provider-kind
+  rules:
+    - host: {{kfpHost}}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ml-pipeline-ui
+                port:
+                  number: 80

@@ -1,0 +1,27 @@
+# Kubeflow Pipelines 2.18.0 standalone, kept as rendered manifests in devops/platform
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kfp
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: {{gitlabUrl}}/devops/platform.git
+    targetRevision: main
+    path: kfp/manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kubeflow
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # The Argo Workflows CRDs exceed the annotation size limit of client-side apply
+      - ServerSideApply=true
+    # The first sync creates CRDs and the cache webhook together and can fail once; retry instead of waiting for the next commit
+    retry:
+      limit: 10
+      backoff: {duration: 15s, factor: 2, maxDuration: 3m}

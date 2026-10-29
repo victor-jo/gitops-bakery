@@ -4,7 +4,7 @@ import { appStatus, createApp, deleteApp, type AppDeps } from "../apps/lifecycle
 import { ARGOCD_HOST_URL, GITLAB_HOST_URL, GITLAB_INTERNAL_URL, GRAFANA_HOST_URL, HARBOR_HOST_URL } from "../lib/config.js";
 import { registryHost } from "../lib/names.js";
 import { secretsPath } from "../lib/secrets.js";
-import { loadState } from "../lib/state.js";
+import { loadState, type MlHosts } from "../lib/state.js";
 import type { StatusReport } from "../lib/status.js";
 
 type Text = { content: { type: "text"; text: string }[] };
@@ -19,6 +19,18 @@ const appName = z
   .string()
   .regex(/^[a-z]([a-z0-9-]{0,28}[a-z0-9])?$/, "lowercase letters, digits and '-', max 30, starting with a letter")
   .describe("App name, used for the GitLab repos, the Harbor repository, the Argo CD Application and namespace app-<name>");
+
+// Present only on labs installed with --with-ml; the Jupyter token is in the passwords file like every other secret
+export function mlEndpoints(hosts: MlHosts | undefined): Record<string, { url: string; user?: string }> {
+  if (!hosts) return {};
+  return {
+    mlflow: { url: `http://${hosts.mlflow}` },
+    jupyter: { url: `http://${hosts.jupyter}`, user: "token (jupyterToken)" },
+    feast: { url: `http://${hosts.feast}` },
+    kfp: { url: `http://${hosts.kfp}` },
+    grafanaByName: { url: `http://${hosts.grafana}`, user: "admin" },
+  };
+}
 
 const text = (value: unknown): Text => ({ content: [{ type: "text", text: JSON.stringify(value, null, 2) }] });
 
@@ -39,6 +51,7 @@ export function buildTools(p: { deps: () => Promise<AppDeps>; status: () => Prom
             harbor: { url: HARBOR_HOST_URL, user: "admin" },
             argocd: { url: ARGOCD_HOST_URL, user: "admin" },
             grafana: { url: GRAFANA_HOST_URL, user: "admin" },
+            ...mlEndpoints(loadState().ml?.hosts),
           },
           apps: Object.values(loadState().apps).map((a) => ({ name: a.name, url: `http://localhost:${a.nodePort}` })),
           passwordsFile: secretsPath(),

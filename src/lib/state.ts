@@ -6,12 +6,18 @@ import { randomClusterName } from "./names.js";
 
 export type AppRecord = { name: string; nodePort: number; createdAt: string };
 
+// sslip.io names that resolve to the cloud-provider-kind gateway IP of each ML namespace
+export type MlHosts = { mlflow: string; jupyter: string; feast: string; kfp: string; grafana: string };
+
 export type State = {
   version: 1;
   clusterName: string;
   steps: Record<string, { doneAt: string }>;
   apps: Record<string, AppRecord>;
   fastSync?: "webhook" | "ci-refresh";
+  // Opt-in layers chosen at install time; a rerun without the flag keeps them
+  options?: { ml?: boolean };
+  ml?: { hosts: MlHosts };
 };
 
 const statePath = () => join(bakeryHome(), "state.json");
@@ -41,4 +47,19 @@ export function markDone(id: string): void {
 
 export function isDone(id: string): boolean {
   return id in loadState().steps;
+}
+
+// Once a lab has the ML layer, later installs keep installing it
+export function rememberOptions(opts: { ml?: boolean }): { ml: boolean } {
+  const s = loadState();
+  const ml = Boolean(s.options?.ml || opts.ml);
+  s.options = { ...s.options, ml };
+  saveState(s);
+  return { ml };
+}
+
+export function saveMlHosts(hosts: MlHosts): void {
+  const s = loadState();
+  s.ml = { hosts };
+  saveState(s);
 }

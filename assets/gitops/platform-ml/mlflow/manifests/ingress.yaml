@@ -1,0 +1,19 @@
+# Serves the MLflow UI by name; sslip.io resolves the host to the mlflow namespace gateway IP from cloud-provider-kind
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mlflow
+  namespace: mlflow
+spec:
+  ingressClassName: cloud-provider-kind
+  rules:
+    - host: {{mlflowHost}}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mlflow
+                port:
+                  number: 80

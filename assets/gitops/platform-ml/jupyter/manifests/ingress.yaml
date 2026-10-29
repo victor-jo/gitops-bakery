@@ -1,0 +1,19 @@
+# Serves JupyterLab by name; it shares the mlflow namespace gateway IP with the MLflow Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jupyter
+  namespace: mlflow
+spec:
+  ingressClassName: cloud-provider-kind
+  rules:
+    - host: {{jupyterHost}}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: jupyter
+                port:
+                  number: 8888

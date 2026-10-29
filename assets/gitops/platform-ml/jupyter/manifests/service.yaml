@@ -1,0 +1,10 @@
+# In-cluster Service for JupyterLab; browsers reach it through the Ingress on the mlflow namespace gateway
+apiVersion: v1
+kind: Service
+metadata:
+  name: jupyter
+  namespace: mlflow
+spec:
+  selector: {app: jupyter}
+  ports:
+    - {port: 8888, targetPort: 8888}

@@ -114,6 +114,10 @@ export class GitLab {
     await this.call("DELETE", `/projects/${id}?permanently_remove=true&full_path=${enc(marked.data.path_with_namespace)}`, undefined, [404]);
   }
 
+  async branchHead(project: string, branch = "main"): Promise<string> {
+    return (await this.call<{ commit: { id: string } }>("GET", `/projects/${enc(project)}/repository/branches/${enc(branch)}`)).data.commit.id;
+  }
+
   async readFile(project: string, path: string, branch = "main"): Promise<string | null> {
     const res = await this.fetchFn(`${this.baseUrl}/api/v4/projects/${enc(project)}/repository/files/${enc(path)}/raw?ref=${branch}`, {
       headers: { "PRIVATE-TOKEN": this.token },

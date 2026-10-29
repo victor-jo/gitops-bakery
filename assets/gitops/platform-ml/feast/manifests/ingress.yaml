@@ -1,0 +1,19 @@
+# Serves the Feast online feature server by name through the feast namespace gateway IP
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: feast-online
+  namespace: feast
+spec:
+  ingressClassName: cloud-provider-kind
+  rules:
+    - host: {{feastHost}}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: feast-income-features-online
+                port:
+                  number: 80

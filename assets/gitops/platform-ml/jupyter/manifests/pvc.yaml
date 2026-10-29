@@ -1,0 +1,11 @@
+# Keeps the user's notebooks and downloaded data across Jupyter pod restarts
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jupyter-work
+  namespace: mlflow
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi

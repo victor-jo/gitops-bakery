@@ -1,0 +1,59 @@
+# Kubeflow Pipelines 2.18.0 as rendered upstream, with the object store switched from SeaweedFS to the lab's Garage
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - 00-cluster-scoped.yaml
+  - 10-platform-agnostic.yaml
+  - 21-ui-loadbalancer.yaml
+  - 30-ingress.yaml
+patches:
+  - path: patches/garage-object-store.yaml
+  # Garage replaces the bundled SeaweedFS, so its objects and the default credentials Secret are dropped
+  - target: {kind: Deployment, name: seaweedfs}
+    patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: seaweedfs
+        namespace: kubeflow
+  - target: {kind: Service, name: seaweedfs}
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: seaweedfs
+        namespace: kubeflow
+  - target: {kind: PersistentVolumeClaim, name: seaweedfs-pvc}
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: seaweedfs-pvc
+        namespace: kubeflow
+  - target: {kind: ServiceAccount, name: seaweedfs}
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: seaweedfs
+        namespace: kubeflow
+  - target: {kind: NetworkPolicy, name: seaweedfs}
+    patch: |-
+      $patch: delete
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: seaweedfs
+        namespace: kubeflow
+  - target: {kind: Secret, name: mlpipeline-minio-artifact}
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: mlpipeline-minio-artifact
+        namespace: kubeflow

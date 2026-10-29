@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# End-to-end check on a clean Docker: install, idempotent reinstall, MCP app lifecycle, timings, no-sudo GitLab, uninstall
+# End-to-end check on a clean Docker: install, idempotent reinstall, MCP app lifecycle, timings, no-sudo GitLab, uninstall.
+# WITH_ML=1 installs with --with-ml and also checks the ML names, the seeded online store and the pipeline image.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 CLI="node dist/cli.js"
@@ -13,7 +14,7 @@ npm run build >/dev/null
 
 phase "install from scratch"
 t0=$(date +%s)
-$CLI install
+$CLI install ${WITH_ML:+--with-ml}
 echo "install took $(( $(date +%s) - t0 ))s"
 CLUSTER=$(python3 -c "import json,os;print(json.load(open(os.path.expanduser('~/.gitops-bakery/state.json')))['clusterName'])")
 CTX="kind-$CLUSTER"
@@ -24,6 +25,17 @@ bad=$(kubectl --context "$CTX" get pods -A --no-headers | awk '$4 != "Running" &
 apps=$(kubectl --context "$CTX" -n argocd get applications -o jsonpath='{range .items[*]}{.metadata.name}={.status.sync.status}/{.status.health.status} {end}')
 echo "$apps"
 echo "$apps" | tr ' ' '\n' | grep -v '^$' | grep -v 'Synced/Healthy' && fail "applications not healthy" || true
+
+if [ -n "${WITH_ML:-}" ]; then
+  phase "ML: every name answers, the online store is seeded, the pipeline image is in Harbor"
+  for h in $(python3 -c "import json,os;print(' '.join(json.load(open(os.path.expanduser('~/.gitops-bakery/state.json')))['ml']['hosts'].values()))"); do
+    code=$(curl -s -o /dev/null -w '%{http_code}' "http://$h/")
+    echo "$h $code"
+    case "$code" in 200|302|404) ;; *) fail "$h answered $code" ;; esac
+  done
+  kubectl --context "$CTX" -n feast logs job/ml-seed-features | grep -q "online store keys in Valkey db 1: 30162" || fail "online store not seeded"
+  curl -fsS http://localhost:30001/api/v2.0/projects/kfp/repositories/income-pipeline/artifacts | grep -q '"0.1.0"' || fail "pipeline image missing"
+fi
 
 phase "second install skips every step"
 out=$($CLI install)

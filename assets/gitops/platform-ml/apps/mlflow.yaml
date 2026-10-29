@@ -1,0 +1,31 @@
+# MLflow from the community chart, with values and its CloudNativePG database kept in devops/platform
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mlflow
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://community-charts.github.io/helm-charts
+      chart: mlflow
+      targetRevision: 1.11.7
+      helm:
+        releaseName: mlflow
+        valueFiles:
+          - $values/mlflow/values.yaml
+    - repoURL: {{gitlabUrl}}/devops/platform.git
+      targetRevision: main
+      ref: values
+    - repoURL: {{gitlabUrl}}/devops/platform.git
+      targetRevision: main
+      path: mlflow/manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mlflow
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
