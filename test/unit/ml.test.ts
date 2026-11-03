@@ -192,6 +192,10 @@ test("the drift image is built from its own context, and its pipeline reuses the
   expect(pipeline).toContain("http://evidently-service-internal.evidently.svc.cluster.local:8000");
   expect(pipeline).toContain("drift_strength: float = 0.0");
   expect(pipeline).toContain("fail_on_drift: bool = True");
+  // The book-style variant gates inference on the drift step and keeps the chapter-5 pipeline as it was
+  const gated = readFileSync(assetPath("labs", "ml", "drift", "pipeline", "inference_with_drift.py"), "utf8");
+  expect(gated).toContain(".after(drift)");
+  expect(readFileSync(assetPath("labs", "ml", "kfp", "pipeline", "pipeline.py"), "utf8")).not.toContain("detect_drift");
   expect(pipeline).toContain("task.set_caching_options(False)");
 });
 

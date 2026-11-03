@@ -138,6 +138,24 @@ Each report carries the strength as tag `drift-strength-<s>` and metadata `drift
 
 The book says the pipeline stops when drift is found, but Listing 6.9 only stores the report. Here `detect_drift` stores the report first and then fails the step when Evidently calls it dataset drift (at least half of the columns drifted), so KFP shows the run in red. From `drift_strength` 0.1 up, runs therefore end FAILED on purpose: `RuntimeError: dataset drift: 0.88 of columns drifted (threshold 0.5); stopping`. Pass `fail_on_drift=False` to only record.
 
+### The book's layout: a drift gate inside inference
+
+The book places `detect_drift` between the feature and inference steps. `income-batch-inference-with-drift` does that with the same components, and leaves chapter 5's `income-batch-inference` untouched:
+
+```text
+read_entities -> retrieve_features -> detect_drift -> run_inference -> write_predictions
+                                         | dataset drift: the step fails, so inference never starts
+```
+
+```bash
+cd labs/ml/drift/pipeline
+../../.venv-kfp/bin/python inference_with_drift.py
+../../.venv-kfp/bin/python run.py 0   income_batch_inference_with_drift.yaml   # all five steps succeed
+../../.venv-kfp/bin/python run.py 0.3 income_batch_inference_with_drift.yaml   # detect-drift fails; run-inference and write-predictions do not run
+```
+
+`run_inference` is wired `.after(detect_drift)`, which only orders the steps. It is the drift step failing that stops the run, the same point the study group's notes make about the book's pipeline. `drift_strength` shifts only the copy the drift check sees, so a passing run still scores the real features into `predictions_with_drift_check.parquet`.
+
 Open `$EVIDENTLY_URL`, project `income-classifier`. Each run adds a point to three panels:
 
 | Panel | Shows |
