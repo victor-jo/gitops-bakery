@@ -51,13 +51,15 @@ def income_drift_detection(
     project_name: str = "income-classifier",
     # 0 compares the real data, which equals the training data here; 0.05-0.5 shift it so drift becomes visible
     drift_strength: float = 0.0,
+    # Fail the run when Evidently reports dataset drift (the report is stored first)
+    fail_on_drift: bool = True,
 ):
     entities = _wire(read_entities(bucket=entity_bucket, key=entity_key))
     features = _wire(retrieve_features(entities=entities.outputs["entities"], config_bucket=feature_config_bucket,
                                        config_key=feature_config_key, feature_list=feature_list))
     _wire(detect_drift(features=features.outputs["features"], model_name=model_name, model_alias=model_alias,
                        reference_context=reference_context, evidently_url=evidently_url, project_name=project_name,
-                       drift_strength=drift_strength))
+                       drift_strength=drift_strength, fail_on_drift=fail_on_drift))
 
 
 if __name__ == "__main__":

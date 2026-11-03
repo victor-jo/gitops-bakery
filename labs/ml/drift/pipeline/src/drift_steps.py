@@ -6,7 +6,10 @@ from pathlib import Path
 
 import pandas as pd
 
-PANELS = ("Share of drifted columns", "Drift score per column (Jensen-Shannon)", "Drifted columns (last run)")
+PANELS = ("Share of drifted columns", "Drift score per column (Jensen-Shannon)", "Drifted columns (last run)",
+          "Missing values")
+# Evidently calls it dataset drift when at least this share of columns drifted (DataDriftPreset's default)
+DRIFT_SHARE = 0.5
 
 
 def _minio_client():
@@ -45,7 +48,7 @@ def load_reference(uri: str) -> pd.DataFrame:
 
 def ensure_project(ws, name: str, columns: list):
     from evidently.sdk.models import PanelMetric
-    from evidently.sdk.panels import counter_panel, line_plot_panel
+    from evidently.sdk.panels import bar_plot_panel, counter_panel, line_plot_panel
 
     found = ws.search_project(name)
     project = found[0] if found else ws.create_project(name, description="Data drift of the income classifier's input features")
@@ -53,6 +56,7 @@ def ensure_project(ws, name: str, columns: list):
     existing = {p.title for p in ws.get_dashboard(project.id).panels}
     share = PanelMetric(legend="share", metric="DriftedColumnsCount", metric_labels={"value_type": "share"})
     count = PanelMetric(legend="columns", metric="DriftedColumnsCount", metric_labels={"value_type": "count"})
+    missing = PanelMetric(legend="missing cells", metric="DatasetMissingValueCount", metric_labels={"value_type": "count"})
     if PANELS[0] not in existing:
         project.dashboard.add_panel(line_plot_panel(title=PANELS[0], values=[share]))
     if PANELS[1] not in existing:
@@ -61,6 +65,9 @@ def ensure_project(ws, name: str, columns: list):
         project.dashboard.add_panel(line_plot_panel(title=PANELS[1], values=scores))
     if PANELS[2] not in existing:
         project.dashboard.add_panel(counter_panel(title=PANELS[2], values=[count], aggregation="last", size="half"))
+    if PANELS[3] not in existing:
+        # Data quality next to drift, like the book's missing-data panel
+        project.dashboard.add_panel(bar_plot_panel(title=PANELS[3], values=[missing], size="half"))
     return project
 
 
@@ -84,8 +91,9 @@ def simulate_drift(df: pd.DataFrame, columns: list, strength: float, seed: int =
 
 
 def detect_drift(features_path: str, model_name: str, model_alias: str, reference_context: str,
-                 evidently_url: str, project_name: str, drift_strength: float = 0.0) -> float:
+                 evidently_url: str, project_name: str, drift_strength: float = 0.0, fail_on_drift: bool = True) -> float:
     from evidently import DataDefinition, Dataset, Report
+    from evidently.metrics import DatasetMissingValueCount
     from evidently.presets import DataDriftPreset
     from evidently.ui.workspace import RemoteWorkspace
 
@@ -96,7 +104,7 @@ def detect_drift(features_path: str, model_name: str, model_alias: str, referenc
     columns = [c for c in current.columns if c in reference.columns]
     current = simulate_drift(current, columns, drift_strength)
     definition = DataDefinition(categorical_columns=columns)
-    snapshot = Report([DataDriftPreset()]).run(
+    snapshot = Report([DataDriftPreset(drift_share=DRIFT_SHARE), DatasetMissingValueCount()]).run(
         Dataset.from_pandas(current[columns], data_definition=definition),
         Dataset.from_pandas(reference[columns], data_definition=definition),
         # Evidently stores a naive time; UTC keeps Mac runs and pod runs in order on the same graph
@@ -112,4 +120,8 @@ def detect_drift(features_path: str, model_name: str, model_alias: str, referenc
     drifted = next(m["value"] for m in snapshot.dict()["metrics"] if m["metric_name"].startswith("DriftedColumnsCount"))
     print(f"reference {uri}: {len(reference)} rows; current: {len(current)} rows; columns: {len(columns)}; drift_strength {drift_strength:g}")
     print(f"drifted columns: {int(drifted['count'])} of {len(columns)} (share {drifted['share']:.2f}); project {project.id}")
+    # The book says the pipeline stops on drift, but its listing never does; the report is saved first so the
+    # dashboard still shows the run that tripped the gate
+    if fail_on_drift and drifted["share"] >= DRIFT_SHARE:
+        raise RuntimeError(f"dataset drift: {drifted['share']:.2f} of columns drifted (threshold {DRIFT_SHARE}); stopping")
     return float(drifted["share"])
