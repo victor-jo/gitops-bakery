@@ -139,3 +139,6 @@ Live upgrade on `honeyed-bagel` (state backed up, then `ml-storage`, `ml-gateway
   - The gate uses Evidently's own rule, `share_drifted_columns >= drift_share` (0.5). It raises after `add_run`, so the failing run is still on the dashboard.
   - Throwaway server: strength 0.3 raised, and `fail_on_drift=False` passed. The four panels were created, and the missing-value series was `[0, 0, 0]`.
   - Live KFP: strength 0 SUCCEEDED (run e692654e). Strength 0.3 FAILED (b2b196e6), with log `RuntimeError: dataset drift: 0.88 …; stopping`, and its report was stored (8 reports).
+- **Study-group comparison (pasted notes).** The leader ran the book's layout on Evidently 0.5.0. They found the same two things we did: `.after()` does not stop inference, and KFP caching hides new reports.
+  - Decision (user, option 1): add the book's layout as its own pipeline, `income-batch-inference-with-drift` (`labs/ml/drift/pipeline/inference_with_drift.py`). Chapter 5's pipeline stays unchanged.
+  - Live KFP: strength 0 → all five steps SUCCEEDED (run d24833bd). Strength 0.3 → detect-drift FAILED, and run-inference and write-predictions never started (run 524c2265).
