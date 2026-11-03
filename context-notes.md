@@ -129,3 +129,8 @@ Live upgrade on `honeyed-bagel` (state backed up, then `ml-storage`, `ml-gateway
 - **Decision (user): a `drift_strength` parameter.** Column k is moved to its second most common value for a share `s*2*(k+1)/8` of rows. Measured on the training CSV:
   - 0 → 0, 0.05 → 1, 0.1 → 2, 0.2 → 5 (dataset drift), 0.3 → 6, 0.5 → 8 drifted columns.
   - A sample-only variant was rejected, because it never crosses the threshold.  - **Correction after the live runs.** Feast returns its columns in a different order from the CSV, so the measured KFP results differ. Drifted columns per strength: 0.05 → 0, 0.1 → 4 (dataset drift), 0.2 → 6, 0.3 → 7, 0.5 → 7. The README table uses these numbers. The dashboard line now rises from 0 to 0.875, and the counter shows 7.
+- **User: "is this a good graph?" No.** The share panel steps (0 → 0.5) because it counts threshold crossings. Four leftover test zeros took half of it. Sex (two values) never crosses the threshold, so it plateaus at 7/8. The x-axis is time, not strength.
+  - Decision (user): add a per-column Jensen-Shannon panel and rerun cleanly.
+  - The project was deleted through REST (`DELETE /api/projects/<id>` → 204) and recreated by the first run. Six KFP runs (0, 0.05, 0.1, 0.2, 0.3, 0.5) all SUCCEEDED.
+  - Per-column scores at 0.5: Occupation 0.698, Workclass 0.522, Education 0.512, Native_country 0.35, Marital-Status 0.307, Relationship 0.269, Race 0.203, Sex 0.063.
+  - Headless Chrome sometimes captures before the chart draws its lines (the axes are scaled, but there are no lines). Retrying with `--headless=new --virtual-time-budget=20000` drew them.
