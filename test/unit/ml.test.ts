@@ -168,18 +168,24 @@ test("seed Jobs run in the namespaces of the keys they use and carry no secret v
   expect(Object.keys(cm.data).sort()).toEqual(["definitions.py", "seed.py"]);
 });
 
+test("each image tells the KFP executor where its components are, since the Dockerfile is built without kfp component build", () => {
+  const ini = (dir: string) => readFileSync(assetPath("labs", "ml", dir, "pipeline", "src", "kfp_config.ini"), "utf8");
+  for (const c of ["read_entities", "retrieve_features", "run_inference", "write_predictions"]) expect(ini("kfp")).toContain(`${c} = components.py`);
+  expect(ini("drift")).toContain("detect_drift = drift_components.py");
+});
+
 test("the KFP image is built for the host architecture from the lab's own component code", () => {
   expect(buildArgs("arm64", "localhost:30001/kfp/income-pipeline:0.1.0", "/ctx")).toEqual(
     ["build", "--platform", "linux/arm64", "-t", "localhost:30001/kfp/income-pipeline:0.1.0", "/ctx"]);
   const context = assetPath("labs", "ml", "kfp", "pipeline", "src");
   expect(readdirSync(context).filter((n) => !n.startsWith(".") && n !== "__pycache__").sort())
-    .toEqual(["Dockerfile", "components.py", "runtime-requirements.txt", "steps.py"]);
+    .toEqual(["Dockerfile", "components.py", "kfp_config.ini", "runtime-requirements.txt", "steps.py"]);
 });
 
 test("the drift image is built from its own context, and its pipeline reuses the inference image for the first two steps", () => {
   const context = assetPath("labs", "ml", "drift", "pipeline", "src");
   expect(readdirSync(context).filter((n) => !n.startsWith(".") && n !== "__pycache__").sort())
-    .toEqual(["Dockerfile", "drift_components.py", "drift_steps.py", "runtime-requirements.txt"]);
+    .toEqual(["Dockerfile", "drift_components.py", "drift_steps.py", "kfp_config.ini", "runtime-requirements.txt"]);
   expect(readFileSync(join(context, "runtime-requirements.txt"), "utf8")).toMatch(/^evidently==0\.7\.23$/m);
   const pipeline = readFileSync(assetPath("labs", "ml", "drift", "pipeline", "pipeline.py"), "utf8");
   expect(pipeline).toContain("from components import read_entities, retrieve_features");
