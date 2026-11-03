@@ -26,6 +26,16 @@ LINE_SWAPS = [
         '    mlflow.sklearn.log_model(forest,"income-classifier")',
         '    mlflow.sklearn.log_model(forest,"income-classifier", skops_trusted_types=["sklearn.tree._tree.Tree"])',
     ),
+    # The drift pipeline reads the champion's reference features through this lineage. Upstream, the random-forest run
+    # points them at the one-hot test CSV, and the decision-tree run files them under another context name.
+    (
+        '    feature_dataset = mlflow.data.from_pandas(feature_df, source=f"{BUCKET_NAME}/{test_df_path}")',
+        '    feature_dataset = mlflow.data.from_pandas(feature_df, source=f"{BUCKET_NAME}/{feature_df_path}")',
+    ),
+    (
+        '    mlflow.log_input(feature_dataset,context="reference")    ',
+        '    mlflow.log_input(feature_dataset,context="reference_features")',
+    ),
 ]
 
 # The upstream cell registers the single top run; this lab skips XGBoost runs and tags the model family it picked
