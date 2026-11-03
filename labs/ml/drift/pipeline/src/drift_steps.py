@@ -52,7 +52,7 @@ def load_reference(uri: str) -> pd.DataFrame:
     return pd.read_csv(local)
 
 
-def ensure_project(ws, name: str, columns: list):
+def ensure_project(ws, name: str, columns: list, score_title: str = "Drift score per column (Jensen-Shannon)"):
     from evidently.sdk.models import PanelMetric
     from evidently.sdk.panels import bar_plot_panel, counter_panel, line_plot_panel
 
@@ -65,10 +65,10 @@ def ensure_project(ws, name: str, columns: list):
     missing = PanelMetric(legend="missing cells", metric="DatasetMissingValueCount", metric_labels={"value_type": "count"})
     if PANELS[0] not in existing:
         project.dashboard.add_panel(line_plot_panel(title=PANELS[0], values=[share]))
-    if PANELS[1] not in existing:
+    if score_title not in existing:
         # The share above only counts columns past the 0.1 threshold; the raw scores show drift growing before that
         scores = [PanelMetric(legend=c, metric="ValueDrift", metric_labels={"column": c}) for c in columns]
-        project.dashboard.add_panel(line_plot_panel(title=PANELS[1], values=scores))
+        project.dashboard.add_panel(line_plot_panel(title=score_title, values=scores))
     if PANELS[2] not in existing:
         project.dashboard.add_panel(counter_panel(title=PANELS[2], values=[count], aggregation="last", size="half"))
     if PANELS[3] not in existing:

@@ -39,7 +39,7 @@ class IncomeClassifier:
     def __init__(self) -> None:
         from drift_steps import ensure_project, load_reference, reference_uri_for_run
         from evidently.ui.workspace import RemoteWorkspace
-        from serving.monitoring import DriftWindow
+        from serving.monitoring import SCORE_TITLE, DriftWindow
 
         info = bentoml.models.get(self.model_ref.tag)
         self.model = bentoml.mlflow.load_model(info)
@@ -49,7 +49,8 @@ class IncomeClassifier:
         # The reference is the training data of the model baked into this image, not of whatever is champion now
         reference = load_reference(reference_uri_for_run(info.info.metadata["run_id"], "reference_features"))
         workspace = RemoteWorkspace(os.environ["EVIDENTLY_URL"])
-        project = ensure_project(workspace, os.environ.get("EVIDENTLY_PROJECT", "income-classifier-realtime"), feature_columns)
+        project = ensure_project(workspace, os.environ.get("EVIDENTLY_PROJECT", "income-classifier-realtime"), feature_columns,
+                                 score_title=SCORE_TITLE)
         self.window = DriftWindow(reference, feature_columns, workspace, project,
                                   window_size=int(os.environ.get("DRIFT_WINDOW_SIZE", "100")),
                                   drift_strength=float(os.environ.get("DRIFT_STRENGTH", "0")),

@@ -6,6 +6,11 @@ import pandas as pd
 
 log = logging.getLogger("bentoml")
 
+# 100 rows against 30,162: Jensen-Shannon distance exceeds 0.1 by chance on columns with many values (41 countries),
+# so the window uses the chi-square test, which Evidently itself picks for samples of up to 1,000 rows
+CAT_METHOD = "chisquare"
+SCORE_TITLE = "Drift p-value per column (chi-square; below 0.05 is drift)"
+
 
 class DriftWindow:
     """Keeps the last window_size rows and reports once per window_size new rows.
@@ -46,7 +51,7 @@ class DriftWindow:
 
         current = simulate_drift(self.current, self.columns, self.drift_strength)
         definition = DataDefinition(categorical_columns=self.columns)
-        snapshot = Report([DataDriftPreset(drift_share=DRIFT_SHARE), DatasetMissingValueCount()]).run(
+        snapshot = Report([DataDriftPreset(drift_share=DRIFT_SHARE, cat_method=CAT_METHOD), DatasetMissingValueCount()]).run(
             Dataset.from_pandas(current, data_definition=definition),
             Dataset.from_pandas(self.reference, data_definition=definition),
             timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
