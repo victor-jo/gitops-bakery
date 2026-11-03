@@ -124,3 +124,8 @@ Live upgrade on `honeyed-bagel` (state backed up, then `ml-storage`, `ml-gateway
 - A third run SUCCEEDED, yet no report was added: every executor was SKIPPED (KFP cache). Caching is now off in the drift pipeline. The next two runs each added a report (02:32:50, 02:34:23 UTC).
 - One report that the Mac had stamped in KST was deleted through REST (`DELETE /api/projects/<p>/<r>` → 204). The project `income-classifier` has 4 reports and 2 panels.
 - Tests: 119 pass. The `claude.test.ts` EPIPE flake showed up once in 4 runs and is unrelated.
+- **User report: "no data at all".** The cause was not missing data. Feast serves the same 30,162 users as the training `feature_df`, so every Jensen-Shannon score is exactly 0. The dashboard line lies on the axis, and the counter shows "no value" for 0. The report page itself showed all 8 columns.
+  - Headless Chrome got an empty document from the sslip.io name, so the screenshots went through `drift/pf.sh` (localhost:8000). The user's own browser loaded the sslip.io page (server log from 192.168.165.2).
+- **Decision (user): a `drift_strength` parameter.** Column k is moved to its second most common value for a share `s*2*(k+1)/8` of rows. Measured on the training CSV:
+  - 0 → 0, 0.05 → 1, 0.1 → 2, 0.2 → 5 (dataset drift), 0.3 → 6, 0.5 → 8 drifted columns.
+  - A sample-only variant was rejected, because it never crosses the threshold.  - **Correction after the live runs.** Feast returns its columns in a different order from the CSV, so the measured KFP results differ. Drifted columns per strength: 0.05 → 0, 0.1 → 4 (dataset drift), 0.2 → 6, 0.3 → 7, 0.5 → 7. The README table uses these numbers. The dashboard line now rises from 0 to 0.875, and the counter shows 7.
