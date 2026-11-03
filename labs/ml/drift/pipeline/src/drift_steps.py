@@ -25,17 +25,23 @@ def _minio_client():
     )
 
 
+def reference_uri_for_run(run_id: str, reference_context: str) -> str:
+    """Returns the source of the dataset a training run logged under reference_context."""
+    from mlflow import MlflowClient
+
+    run = MlflowClient().get_run(run_id)
+    for item in run.inputs.dataset_inputs:
+        if any(t.key == "mlflow.data.context" and t.value == reference_context for t in item.tags):
+            return json.loads(item.dataset.source)["uri"]
+    raise ValueError(f"run {run_id} logged no dataset with context {reference_context}")
+
+
 def reference_uri(model_name: str, model_alias: str, reference_context: str) -> str:
     """Follows MLflow lineage from the alias to the dataset the champion's run logged under reference_context."""
     from mlflow import MlflowClient
 
-    client = MlflowClient()
-    version = client.get_model_version_by_alias(model_name, model_alias)
-    run = client.get_run(version.run_id)
-    for item in run.inputs.dataset_inputs:
-        if any(t.key == "mlflow.data.context" and t.value == reference_context for t in item.tags):
-            return json.loads(item.dataset.source)["uri"]
-    raise ValueError(f"run {version.run_id} of {model_name}@{model_alias} logged no dataset with context {reference_context}")
+    version = MlflowClient().get_model_version_by_alias(model_name, model_alias)
+    return reference_uri_for_run(version.run_id, reference_context)
 
 
 def load_reference(uri: str) -> pd.DataFrame:

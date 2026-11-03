@@ -1,0 +1,11 @@
+# Packages inside the Bento image; the same versions as the drift pipeline image and the Mac venv
+bentoml==1.4.39
+feast[redis,aws]==0.67.0
+mlflow==3.16.0
+scikit-learn==1.9.1
+skops==0.16.0
+evidently==0.7.23
+pandas==2.3.3
+numpy==2.5.4
+pyarrow==25.0.1
+minio==7.2.20

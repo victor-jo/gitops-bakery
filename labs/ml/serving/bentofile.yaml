@@ -1,0 +1,11 @@
+# Bento for the income classifier with drift reporting; built from labs/ml so it can include the drift helpers
+service: "serving.service:IncomeClassifier"
+include:
+  - "serving/service.py"
+  - "serving/monitoring.py"
+  - "serving/__init__.py"
+  - "drift/pipeline/src/drift_steps.py"
+python:
+  requirements_txt: "serving/requirements.txt"
+docker:
+  python_version: "3.13"
