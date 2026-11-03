@@ -30,6 +30,8 @@ def _wire(task):
         "AWS_ACCESS_KEY_ID": "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY": "AWS_SECRET_ACCESS_KEY"})
     for name, value in ENV.items():
         task.set_env_variable(name, value)
+    # The lab rebuilds its images under the same tag, so nodes must not run a cached copy
+    kubernetes.set_image_pull_policy(task, "Always")
     return task
 
 
