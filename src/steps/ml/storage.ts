@@ -10,7 +10,8 @@ export const ML_BUCKETS = ["mlflow", "mlflow-datasets", "feature-registry", "fea
 export const ML_KEYS: Record<string, { owner: string[]; read: string[] }> = {
   mlflow: { owner: ["mlflow", "mlflow-datasets"], read: [] },
   feast: { owner: ["feature-registry", "feature-data-sets"], read: [] },
-  kfp: { owner: ["inference-datasets"], read: ["feature-registry", "feature-data-sets"] },
+  // The drift pipeline also reads the champion's reference features, which the training notebook stored in mlflow-datasets
+  kfp: { owner: ["inference-datasets"], read: ["feature-registry", "feature-data-sets", "mlflow-datasets"] },
   "kfp-pipeline": { owner: ["mlpipeline"], read: [] },
 };
 

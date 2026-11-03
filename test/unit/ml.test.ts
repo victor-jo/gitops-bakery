@@ -133,12 +133,14 @@ test("an app counts as done only once it is Synced and Healthy at the commit jus
   expect(syncedAt(null, "new")).toBe(false);
 });
 
-test("every ML bucket has an owner key, and kfp may read but not rewrite the feature buckets", () => {
+test("every ML bucket has an owner key, and kfp may read but not rewrite the feature and reference buckets", () => {
   for (const b of ML_BUCKETS) expect(Object.values(ML_KEYS).some((k) => k.owner.includes(b)), b).toBe(true);
   const cmds = grantCommands().map((c) => c.join(" "));
   expect(cmds).toContain("bucket allow --read --write --owner inference-datasets --key kfp");
   expect(cmds).toContain("bucket allow --read feature-registry --key kfp");
+  expect(cmds).toContain("bucket allow --read mlflow-datasets --key kfp");
   expect(cmds).not.toContain("bucket allow --read --write --owner feature-registry --key kfp");
+  expect(cmds).not.toContain("bucket allow --read --write --owner mlflow-datasets --key kfp");
 });
 
 test("the ML Secrets are the ones the manifests reference, and Feast uses Valkey db 1", () => {
