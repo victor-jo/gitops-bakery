@@ -35,3 +35,13 @@ Plan: `docs/superpowers/plans/2026-10-20-gitops-bakery-v0.1.md`
 - [x] 7. Live upgrade on `crusty-focaccia`: all ML apps at the new head, 5 names answer, 30,162 online keys, arm64 image pushed, KFP run SUCCEEDED, local runner 30,162 rows
 - [x] 8. Fresh install with --with-ml on `honeyed-bagel`: 1001 s, all apps healthy, new gateway IPs, 30,162 keys, 10.9 GiB
 - [ ] 9. Push branch and open the PR (ask first)
+
+# Evidently — drift monitoring on the ML layer (plan: ~/.claude/plans/https-github-com-evidentlyai-evidently-sleepy-summit.md)
+
+- [x] 1. Evidently UI app in `devops/platform`: namespace `evidently`, PVC workspace, `evidently-service-internal:8000`, sslip.io Ingress
+- [x] 2. Installer: `evidently` gateway name, `ml-drift-image` step, status/MCP/env.sh show the name
+- [x] 3. Notebook lineage fix (`patch_notebook.py`) and kfp read grant on `mlflow-datasets`
+- [x] 4. `labs/ml/drift`: `income-drift-detection` pipeline, `run_local.sh`, `pf.sh`
+- [x] 5. Unit tests (118 pass) and docs (READMEs, architecture, traps 33–35, labs/ml section 6)
+- [x] 6. Live upgrade on `honeyed-bagel`: install, retrain, champion, drift on Mac and in KFP
+- [ ] 7. Push branch and open the PR (ask first)

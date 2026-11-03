@@ -94,3 +94,33 @@ Decisions and raw errors, appended as the work goes. The design lives in `docs/s
   - Names answer: mlflow 200, jupyter 302, feast 404 on `/` (its API is under `/get-online-features`), kfp 200, grafana 302.
   - The online store has 30,162 keys, and the Harbor image is tagged 0.1.0. A second install skipped every step.
   - Memory: 1.78 + 3.39 + 4.19 + 1.56 = 10.9 GiB.
+
+# Evidently (2026-11-03)
+
+Decisions, grilled with the user one at a time:
+- **Scope.** The Evidently UI server plus a batch drift exercise. BentoML and drift checks during serving (the rest of book chapter 6) come later.
+- **Version 0.7.23 with the new API.** The book pins `evidently==0.5.0`. Its `Report`/`ColumnDriftMetric`/`ui.dashboards` API is gone or lives under `evidently.legacy` now, and this lab is already past the book (py3.13, MLflow 3.16, alias `champion`).
+- **Storage.** A file workspace on a 2 GiB RWO PVC, one replica, `Recreate`. No CNPG database and no Garage key, because this is a lab.
+- **Namespace `evidently`.** It gets its own gateway IP and sslip.io name. The Service keeps the book's name, `evidently-service-internal:8000`. `pf.sh` opens `localhost:8000` for the study group leader's setup (remote server plus SSH tunnel, Evidently on 8000).
+- **A separate pipeline.** The user writes a separate blog post on it, so `income-batch-inference` stays untouched. `income-drift-detection` reuses its `read_entities`/`retrieve_features` components and image. Only `detect_drift` runs in the new `kfp/drift-pipeline` image, which has no Feast.
+- **Reference data comes from MLflow lineage, as in the book.** The chain is alias → run → the dataset input with context `reference_features` → CSV in `mlflow-datasets`. The `kfp` key got read-only access to that bucket.
+- **The project and panels are created by the drift step, only when missing.** Two runs against a local server left exactly two panels.
+
+Facts found on the way:
+- `evidently/evidently-service` is multi-arch (amd64 + arm64) from 0.5.0 to 0.7.23, so it needs no Rosetta. There is no official Helm chart, so the lab uses plain manifests.
+- evidently 0.7.23, feast 0.67, mlflow 3.16 and pandas 2.3.3 install together on python:3.13-slim. Without the pandas pin, pip takes pandas 3 and `import evidently` fails (`infer_dtype_from_object`).
+- In 0.7.23, `RemoteWorkspace.list_runs` raises `NotImplementedError`. Reports are listed with `GET /api/projects/<id>/reports`. Snapshot metrics are keyed by `metric_name` (`DriftedColumnsCount(drift_share=0.5)`), not by `metric_id`.
+- Book bug: in the random-forest cell, `feature_df` is logged with `source=.../test-<run>.csv` (one-hot columns). The decision-tree cell uses context `reference` while random forest uses `reference_features`. The lab's champion is the best non-XGBoost run, usually a random forest, so the book's lineage pointed at the wrong file.
+- Feast values and the training CSV both keep the leading space (`' Male'`), so comparing them raw causes no false drift.
+- Upgrading an older lab: `ml-gateways` and `ml-platform` are already marked done there. `mlHosts()` now refuses with "run install --force" instead of rendering `undefined`, and the status output hides the Evidently row until the name exists.
+
+Live upgrade on `honeyed-bagel` (state backed up, then `ml-storage`, `ml-gateways` and `ml-platform` unmarked, as in the earlier ML work):
+- `cloud-provider-kind` had been restarted, so the gateways came back with new IPs. `ml-gateways` rewrote every name, e.g. MLflow .6 → .8, and Evidently got .11.
+- Argo CD `evidently` is Synced/Healthy. The PVC is Bound at 2Gi, and `/api/version` answers `0.7.23`.
+- The notebook was reset and retrained. Champion `income-classifier-best` v1 is a random forest. Its `reference_features` input is `mlflow-datasets/income-classifier-datasets/feature_df-0c1233ed….csv`.
+- `drift/run_local.sh`: 30,162 rows each side, 0 of 8 columns drifted.
+- The first KFP run FAILED in `read_entities` with `No components found in kfp_config.ini`. That image is the installer-built inference image, so a fresh `--with-ml` lab could not run the inference pipeline either. The earlier passing run (crusty-focaccia) used a hand-built image. Both contexts now ship `kfp_config.ini`, and pipelines pull with `Always`.
+- After that, `income-drift-detection` SUCCEEDED, and `income-batch-inference` SUCCEEDED as well.
+- A third run SUCCEEDED, yet no report was added: every executor was SKIPPED (KFP cache). Caching is now off in the drift pipeline. The next two runs each added a report (02:32:50, 02:34:23 UTC).
+- One report that the Mac had stamped in KST was deleted through REST (`DELETE /api/projects/<p>/<r>` → 204). The project `income-classifier` has 4 reports and 2 panels.
+- Tests: 119 pass. The `claude.test.ts` EPIPE flake showed up once in 4 runs and is unrelated.
