@@ -60,8 +60,27 @@ def ensure_project(ws, name: str):
     return project
 
 
+def simulate_drift(df: pd.DataFrame, columns: list, strength: float, seed: int = 0) -> pd.DataFrame:
+    """Moves part of each column to its second most common value, so a lab can watch drift appear.
+
+    Feast serves the same users the model was trained on, so without this every score is exactly 0.
+    Column k is moved for a share strength * 2 * (k + 1) / len(columns) of rows, so columns tip over
+    one after another: on the Feast features 0.05 drifts none of 8 columns, 0.1 drifts 4, 0.3 drifts 7.
+    """
+    import numpy as np
+
+    if strength <= 0:
+        return df
+    rng = np.random.default_rng(seed)
+    out = df.copy()
+    for k, column in enumerate(columns):
+        share = min(1.0, strength * 2 * (k + 1) / len(columns))
+        out.loc[rng.random(len(out)) < share, column] = out[column].value_counts().index[1]
+    return out
+
+
 def detect_drift(features_path: str, model_name: str, model_alias: str, reference_context: str,
-                 evidently_url: str, project_name: str) -> float:
+                 evidently_url: str, project_name: str, drift_strength: float = 0.0) -> float:
     from evidently import DataDefinition, Dataset, Report
     from evidently.presets import DataDriftPreset
     from evidently.ui.workspace import RemoteWorkspace
@@ -71,14 +90,15 @@ def detect_drift(features_path: str, model_name: str, model_alias: str, referenc
     current = pd.read_parquet(features_path).drop(columns=["user_id", "event_timestamp"], errors="ignore")
     # Only the columns Feast serves are compared; every one of them is categorical in this dataset
     columns = [c for c in current.columns if c in reference.columns]
+    current = simulate_drift(current, columns, drift_strength)
     definition = DataDefinition(categorical_columns=columns)
     snapshot = Report([DataDriftPreset()]).run(
         Dataset.from_pandas(current[columns], data_definition=definition),
         Dataset.from_pandas(reference[columns], data_definition=definition),
         # Evidently stores a naive time; UTC keeps Mac runs and pod runs in order on the same graph
         timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
-        tags=[model_alias],
-        metadata={"model": model_name, "reference": uri},
+        tags=[model_alias, f"drift-strength-{drift_strength:g}"],
+        metadata={"model": model_name, "reference": uri, "drift_strength": f"{drift_strength:g}"},
     )
 
     ws = RemoteWorkspace(evidently_url)
@@ -86,6 +106,6 @@ def detect_drift(features_path: str, model_name: str, model_alias: str, referenc
     ws.add_run(project.id, snapshot, include_data=False)
 
     drifted = next(m["value"] for m in snapshot.dict()["metrics"] if m["metric_name"].startswith("DriftedColumnsCount"))
-    print(f"reference {uri}: {len(reference)} rows; current: {len(current)} rows; columns: {len(columns)}")
+    print(f"reference {uri}: {len(reference)} rows; current: {len(current)} rows; columns: {len(columns)}; drift_strength {drift_strength:g}")
     print(f"drifted columns: {int(drifted['count'])} of {len(columns)} (share {drifted['share']:.2f}); project {project.id}")
     return float(drifted["share"])

@@ -114,7 +114,8 @@ labs/ml/mlflow/set_champion.sh
 Run it on the Mac first (needs the Garage tunnel from `feast/pf.sh` and the step-runner venv):
 
 ```bash
-labs/ml/drift/run_local.sh     # reuses kfp/out/2_features.parquet, or runs inference steps 1-2 first
+labs/ml/drift/run_local.sh       # reuses kfp/out/2_features.parquet, or runs inference steps 1-2 first
+labs/ml/drift/run_local.sh 0.2   # the same, with the features shifted until Evidently reports drift
 ```
 
 Then in KFP:
@@ -123,7 +124,17 @@ Then in KFP:
 cd labs/ml/drift/pipeline
 ../../.venv-kfp/bin/python pipeline.py    # compiles income_drift_detection.yaml with $KFP_IMAGE and $DRIFT_IMAGE
 ../../.venv-kfp/bin/python run.py         # one run, waits for it
+for s in 0.05 0.1 0.2 0.3 0.5; do ../../.venv-kfp/bin/python run.py $s; done   # a rising drift curve
 ```
+
+Feast serves the very users the model was trained on, so the real comparison always scores 0: a flat line on the axis and a counter that says "no value". `drift_strength` (0 to 1) moves part of every column to its second most common value, one column after another:
+
+| `drift_strength` | 0 | 0.05 | 0.1 | 0.2 | 0.3 | 0.5 |
+|---|---|---|---|---|---|---|
+| Drifted columns (of 8), measured in KFP | 0 | 0 | 4 | 6 | 7 | 7 |
+| Dataset drift (share >= 0.5) | no | no | yes | yes | yes | yes |
+
+Each report carries the strength as tag `drift-strength-<s>` and metadata `drift_strength`.
 
 Open `$EVIDENTLY_URL`, project `income-classifier`. Each run adds a point to "Share of drifted columns". The book reaches Evidently at `localhost:8000`; `labs/ml/drift/pf.sh` opens that tunnel, and `EVIDENTLY_URL=http://localhost:8000` points `run_local.sh` at it.
 

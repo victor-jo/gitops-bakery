@@ -12,7 +12,7 @@ PACKAGES = ["evidently==0.7.23", "mlflow==3.16.0", "minio==7.2.20", "pandas==2.3
 
 @dsl.component(base_image=BASE, target_image=IMAGE, packages_to_install=PACKAGES)
 def detect_drift(features: Input[Dataset], model_name: str, model_alias: str, reference_context: str,
-                 evidently_url: str, project_name: str) -> float:
+                 evidently_url: str, project_name: str, drift_strength: float) -> float:
     from drift_steps import detect_drift as run
 
-    return run(features.path, model_name, model_alias, reference_context, evidently_url, project_name)
+    return run(features.path, model_name, model_alias, reference_context, evidently_url, project_name, drift_strength)

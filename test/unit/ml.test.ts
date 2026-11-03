@@ -190,6 +190,8 @@ test("the drift image is built from its own context, and its pipeline reuses the
   const pipeline = readFileSync(assetPath("labs", "ml", "drift", "pipeline", "pipeline.py"), "utf8");
   expect(pipeline).toContain("from components import read_entities, retrieve_features");
   expect(pipeline).toContain("http://evidently-service-internal.evidently.svc.cluster.local:8000");
+  expect(pipeline).toContain("drift_strength: float = 0.0");
+  expect(pipeline).toContain("task.set_caching_options(False)");
 });
 
 test("--with-ml raises the memory floor", () => {
