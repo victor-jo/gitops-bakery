@@ -1,6 +1,7 @@
 # Drift check of the income classifier: the champion's training features versus today's Feast features, sent to Evidently
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -74,6 +75,8 @@ def detect_drift(features_path: str, model_name: str, model_alias: str, referenc
     snapshot = Report([DataDriftPreset()]).run(
         Dataset.from_pandas(current[columns], data_definition=definition),
         Dataset.from_pandas(reference[columns], data_definition=definition),
+        # Evidently stores a naive time; UTC keeps Mac runs and pod runs in order on the same graph
+        timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
         tags=[model_alias],
         metadata={"model": model_name, "reference": uri},
     )
