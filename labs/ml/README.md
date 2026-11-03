@@ -1,6 +1,6 @@
 # ML lab exercises
 
-Exercises for the ML layer that `install --with-ml` adds to the bakery lab: MLflow, JupyterLab, Feast and Kubeflow Pipelines, each reachable through a cloud-provider-kind gateway under an `sslip.io` name.
+Exercises for the ML layer that `install --with-ml` adds to the bakery lab: MLflow, JupyterLab, Feast, Kubeflow Pipelines and Evidently, each reachable through a cloud-provider-kind gateway under an `sslip.io` name.
 
 The installer already did the platform part:
 
@@ -8,18 +8,18 @@ The installer already did the platform part:
 |---|---|
 | Garage buckets `mlflow`, `mlflow-datasets`, `feature-registry`, `feature-data-sets`, `inference-datasets`, `mlpipeline` and one key per consumer | Garage in namespace `gitlab` |
 | Secrets `mlflow-s3`, `jupyter-token`, `feast-s3`, `feast-online-store`, `kfp-s3`, `kfp-garage-artifact` | namespaces `mlflow`, `feast`, `kubeflow` |
-| Argo CD apps `mlflow`, `jupyter`, `feast-operator`, `feast-store`, `kfp` | `devops/platform` in GitLab |
+| Argo CD apps `mlflow`, `jupyter`, `feast-operator`, `feast-store`, `kfp`, `evidently` | `devops/platform` in GitLab |
 | Example datasets, both Feast registries, 30,162 users in the online store | seed Jobs `ml-seed-features`, `ml-seed-inference` |
-| Pipeline image `kfp/income-pipeline:0.1.0` | Harbor |
+| Pipeline images `kfp/income-pipeline:0.1.0` and `kfp/drift-pipeline:0.1.0` | Harbor |
 
-What is left are the exercises themselves: train a model, pick the serving version, run the pipeline.
+What is left are the exercises themselves: train a model, pick the serving version, run the pipeline, check for drift.
 
 ## Before you start
 
 ```bash
 brew install cloud-provider-kind
 sudo cloud-provider-kind          # keep it running in its own terminal
-source labs/ml/env.sh             # BAKERY_CONTEXT, MLFLOW_URL, JUPYTER_URL, FEAST_URL, KFP_URL, KFP_IMAGE
+source labs/ml/env.sh             # BAKERY_CONTEXT, MLFLOW_URL, JUPYTER_URL, FEAST_URL, KFP_URL, EVIDENTLY_URL, KFP_IMAGE, DRIFT_IMAGE
 ```
 
 `npx github:victor-jo/gitops-bakery status` prints the same URLs. The Jupyter token is `jupyterToken` in `~/.gitops-bakery/secrets.json`.
@@ -93,6 +93,40 @@ cd labs/ml/kfp/pipeline
 
 The predictions land in `s3://inference-datasets/predictions_kfp.parquet`, and the run is visible at `$KFP_URL`. `kfp/smoke/` has two tiny pipelines that check scheduling and artifact passing on their own.
 
+## 6. Detect drift (Evidently)
+
+A separate pipeline, `income-drift-detection`, compares the features Feast serves today with the features the `champion` model was trained on, and stores an Evidently report in the project `income-classifier`:
+
+```text
+read_entities -> retrieve_features -> detect_drift
+   (inference image, unchanged)        (drift image: Evidently 0.7.23)
+```
+
+`detect_drift` follows MLflow lineage: alias `champion` -> its run -> the dataset input with context `reference_features` -> that CSV in Garage. The book's notebook got this lineage wrong for random-forest runs. The lab's notebook fixes it, but the Jupyter volume keeps the notebook it patched first, so an older lab removes it, lets the init container patch a fresh copy, and trains again:
+
+```bash
+kubectl --context $BAKERY_CONTEXT -n mlflow exec deploy/jupyter -c jupyter -- rm -f /home/jovyan/work/mlflow/data_exploration_and_model_training.ipynb
+kubectl --context $BAKERY_CONTEXT -n mlflow rollout restart deploy/jupyter   # fetches and patches the notebook again
+labs/ml/mlflow/train.sh
+labs/ml/mlflow/set_champion.sh
+```
+
+Run it on the Mac first (needs the Garage tunnel from `feast/pf.sh` and the step-runner venv):
+
+```bash
+labs/ml/drift/run_local.sh     # reuses kfp/out/2_features.parquet, or runs inference steps 1-2 first
+```
+
+Then in KFP:
+
+```bash
+cd labs/ml/drift/pipeline
+../../.venv-kfp/bin/python pipeline.py    # compiles income_drift_detection.yaml with $KFP_IMAGE and $DRIFT_IMAGE
+../../.venv-kfp/bin/python run.py         # one run, waits for it
+```
+
+Open `$EVIDENTLY_URL`, project `income-classifier`. Each run adds a point to "Share of drifted columns". The book reaches Evidently at `localhost:8000`; `labs/ml/drift/pf.sh` opens that tunnel, and `EVIDENTLY_URL=http://localhost:8000` points `run_local.sh` at it.
+
 ## Rebuilding the pipeline image
 
 The installer builds `kfp/pipeline/src` for the host architecture and pushes it. To rebuild it after editing `steps.py`:
@@ -102,4 +136,4 @@ docker build --platform linux/$(uname -m | sed 's/x86_64/amd64/') -t localhost:3
 docker push localhost:30001/kfp/income-pipeline:0.1.0     # after docker login localhost:30001 -u admin
 ```
 
-`kfp component build` always targets amd64, which is why the Dockerfile it generated is built directly.
+`kfp component build` always targets amd64, which is why the Dockerfile it generated is built directly. The drift image is rebuilt the same way from `labs/ml/drift/pipeline/src` as `kfp/drift-pipeline:0.1.0`.

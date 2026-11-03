@@ -94,20 +94,21 @@ sudo cloud-provider-kind            # keep it running in another terminal
 npx github:victor-jo/gitops-bakery install --with-ml
 ```
 
-This adds MLflow, JupyterLab, Feast and Kubeflow Pipelines 2.18 on top of the base lab. They are delivered the same way, as Argo CD Applications in `devops/platform`. Each UI gets a name instead of a port:
+This adds MLflow, JupyterLab, Feast, Kubeflow Pipelines 2.18 and the Evidently UI on top of the base lab. They are delivered the same way, as Argo CD Applications in `devops/platform`. Each UI gets a name instead of a port:
 
 | UI | Name |
 |---|---|
 | MLflow, JupyterLab | `mlflow.<ip>.sslip.io`, `jupyter.<ip>.sslip.io` |
 | Feast online server | `feast.<ip>.sslip.io` |
 | KFP | `kfp.<ip>.sslip.io` |
+| Evidently | `evidently.<ip>.sslip.io` |
 | Grafana | `grafana.<ip>.sslip.io` (the NodePort stays) |
 
 `<ip>` is the gateway address cloud-provider-kind gives that namespace, written with dashes. The installer reads it and commits the names, and `status` prints them.
 
-The installer also creates the Garage buckets and keys and the Secrets. In-cluster Jobs seed the example datasets and both Feast registries and fill the online store with 30,162 users, so the Mac needs no Python for setup. It also builds the pipeline image for your architecture and pushes it to Harbor.
+The installer also creates the Garage buckets and keys and the Secrets. In-cluster Jobs seed the example datasets and both Feast registries and fill the online store with 30,162 users, so the Mac needs no Python for setup. It also builds the two pipeline images (inference and drift) for your architecture and pushes them to Harbor.
 
-Training, choosing the `champion` model and running the pipeline are left as exercises in [labs/ml](labs/ml/README.md). The flag is remembered, so a later plain `install` keeps the ML layer. An existing lab gains it by running `install --with-ml` once.
+Training, choosing the `champion` model, running the pipeline and checking drift are left as exercises in [labs/ml](labs/ml/README.md). The flag is remembered, so a later plain `install` keeps the ML layer. An existing lab gains it by running `install --with-ml` once. A lab that already had the ML layer before Evidently gains it with `install --force`.
 
 ## MCP tools
 

@@ -94,13 +94,14 @@ sudo cloud-provider-kind            # 다른 터미널에 켜 둔다
 npx github:victor-jo/gitops-bakery install --with-ml
 ```
 
-기본 실험실 위에 MLflow, JupyterLab, Feast, Kubeflow Pipelines 2.18이 올라간다. 올라가는 길도 같다. 전부 `devops/platform`의 Argo CD Application이다. 화면마다 포트 대신 이름이 붙는다.
+기본 실험실 위에 MLflow, JupyterLab, Feast, Kubeflow Pipelines 2.18, Evidently UI가 올라간다. 올라가는 길도 같다. 전부 `devops/platform`의 Argo CD Application이다. 화면마다 포트 대신 이름이 붙는다.
 
 | 화면 | 이름 |
 |---|---|
 | MLflow, JupyterLab | `mlflow.<ip>.sslip.io`, `jupyter.<ip>.sslip.io` |
 | Feast 온라인 서버 | `feast.<ip>.sslip.io` |
 | KFP | `kfp.<ip>.sslip.io` |
+| Evidently | `evidently.<ip>.sslip.io` |
 | Grafana | `grafana.<ip>.sslip.io` (NodePort도 그대로 둔다) |
 
 `<ip>`는 cloud-provider-kind가 그 네임스페이스에 준 gateway 주소를 점 대신 대시로 적은 것이다. 설치기가 이 주소를 읽어 이름을 만들고 커밋한다. 만들어진 이름은 `status`로 확인한다.
@@ -109,9 +110,9 @@ npx github:victor-jo/gitops-bakery install --with-ml
 - 예제 데이터와 Feast 레지스트리 두 개를 넣는다.
 - 온라인 저장소에 사용자 30,162명을 채운다.
 
-그래서 준비 단계에서 Mac에 Python이 필요 없다. 파이프라인 이미지도 지금 아키텍처로 빌드해 Harbor에 올린다.
+그래서 준비 단계에서 Mac에 Python이 필요 없다. 파이프라인 이미지 두 개(추론, 드리프트)도 지금 아키텍처로 빌드해 Harbor에 올린다.
 
-남은 실습은 [labs/ml](labs/ml/README.md)에 있다. 모델 학습, `champion` 모델 고르기, 파이프라인 실행이다. 이 옵션은 state에 기록된다. 그래서 다음에 옵션 없이 `install`을 돌려도 ML 층은 유지된다. 이미 있는 실험실이라면 `install --with-ml`을 한 번 돌리면 된다.
+남은 실습은 [labs/ml](labs/ml/README.md)에 있다. 모델 학습, `champion` 모델 고르기, 파이프라인 실행, 드리프트 확인이다. 이 옵션은 state에 기록된다. 그래서 다음에 옵션 없이 `install`을 돌려도 ML 층은 유지된다. 이미 있는 실험실이라면 `install --with-ml`을 한 번 돌리면 된다. Evidently가 생기기 전에 ML 층을 깐 실험실은 `install --force`로 Evidently를 받는다.
 
 ## MCP 도구
 
