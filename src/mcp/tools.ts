@@ -29,6 +29,8 @@ export function mlEndpoints(hosts: MlHosts | undefined): Record<string, { url: s
     feast: { url: `http://${hosts.feast}` },
     kfp: { url: `http://${hosts.kfp}` },
     grafanaByName: { url: `http://${hosts.grafana}`, user: "admin" },
+    // A lab from before Evidently has no name for it until install --force
+    ...(hosts.evidently ? { evidently: { url: `http://${hosts.evidently}` } } : {}),
   };
 }
 

@@ -1,4 +1,4 @@
-// Commits the ML Applications (MLflow, Jupyter, Feast, KFP) to devops/platform and waits until Argo CD has them running
+// Commits the ML Applications (MLflow, Jupyter, Feast, KFP, Evidently) to devops/platform and waits until Argo CD has them running
 import { GITLAB_HOST_URL, GITLAB_INTERNAL_URL } from "../../lib/config.js";
 import type { AppStatus } from "../../lib/argocd.js";
 import { GitLab } from "../../lib/gitlab.js";
@@ -8,7 +8,7 @@ import { argocdAdmin, gitopsFiles, type RepoFile } from "../bootstrap.js";
 import type { Step } from "../types.js";
 import { deleteGatewayProbes, mlHosts } from "./gateways.js";
 
-export const ML_APPS = ["feast-operator", "mlflow", "jupyter", "feast-store", "kfp", "monitoring"];
+export const ML_APPS = ["feast-operator", "mlflow", "jupyter", "feast-store", "kfp", "evidently", "monitoring"];
 
 // Earlier hand-built labs published these NodePorts inside the 30010-30019 app range; the Ingress names replace them
 export const STALE_PLATFORM_FILES = [
@@ -25,6 +25,7 @@ export function mlPlatformFiles(hosts: MlHosts): RepoFile[] {
     feastHost: hosts.feast,
     kfpHost: hosts.kfp,
     grafanaHost: hosts.grafana,
+    evidentlyHost: hosts.evidently,
   };
   // monitoring.yaml from the base set gains the optional Grafana ingress values file, so both sets go in together
   return [...gitopsFiles("platform", vars), ...gitopsFiles("platform-ml", vars)];
@@ -49,7 +50,7 @@ export const mlPlatformStep: Step = {
     const project = "devops/platform";
     const gitlab = new GitLab(GITLAB_HOST_URL, ctx.secrets.gitlabPat!);
     const changed = await changedFiles(gitlab, project, mlPlatformFiles(mlHosts()));
-    if (changed.length) await gitlab.commitFiles(project, changed, "Add the ML lab (MLflow, Jupyter, Feast, KFP) by gitops-bakery --with-ml");
+    if (changed.length) await gitlab.commitFiles(project, changed, "Add the ML lab (MLflow, Jupyter, Feast, KFP, Evidently) by gitops-bakery --with-ml");
     for (const path of STALE_PLATFORM_FILES)
       if ((await gitlab.readFile(project, path)) !== null) await gitlab.deleteFile(project, path, `Remove ${path}, which --with-ml no longer uses`);
     const head = await gitlab.branchHead(project);

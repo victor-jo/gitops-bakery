@@ -42,6 +42,8 @@ function endpoints(): [string, string, string][] {
     ["Feast", `http://${hosts.feast}`, "-"],
     ["KFP", `http://${hosts.kfp}`, "-"],
     ["Grafana (name)", `http://${hosts.grafana}`, "admin"],
+    // A lab from before Evidently has no name for it until install --force
+    ...(hosts.evidently ? [["Evidently", `http://${hosts.evidently}`, "-"] as [string, string, string]] : []),
   ];
 }
 
@@ -49,7 +51,7 @@ program
   .command("install")
   .description("Create the kind cluster and install the whole stack (safe to rerun)")
   .option("--force", "rerun steps that are already done")
-  .option("--with-ml", "also install the ML lab: MLflow, Jupyter, Feast and Kubeflow Pipelines behind cloud-provider-kind (kept on reruns)")
+  .option("--with-ml", "also install the ML lab: MLflow, Jupyter, Feast, Kubeflow Pipelines and Evidently behind cloud-provider-kind (kept on reruns)")
   .action(async (opts: { force?: boolean; withMl?: boolean }) => {
     const { ml } = rememberOptions({ ml: opts.withMl });
     const ctx = { secrets: loadOrCreateSecrets(), log: consoleLogger, arch: process.arch === "arm64" ? "arm64" : "amd64", ml } as const;

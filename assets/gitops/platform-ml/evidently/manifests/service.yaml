@@ -1,0 +1,10 @@
+# In-cluster Service for the Evidently UI and API, named as in the book so its port-forward commands work unchanged
+apiVersion: v1
+kind: Service
+metadata:
+  name: evidently-service-internal
+  namespace: evidently
+spec:
+  selector: {app: evidently}
+  ports:
+    - {port: 8000, targetPort: 8000}

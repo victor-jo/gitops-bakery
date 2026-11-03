@@ -7,7 +7,7 @@ import { randomClusterName } from "./names.js";
 export type AppRecord = { name: string; nodePort: number; createdAt: string };
 
 // sslip.io names that resolve to the cloud-provider-kind gateway IP of each ML namespace
-export type MlHosts = { mlflow: string; jupyter: string; feast: string; kfp: string; grafana: string };
+export type MlHosts = { mlflow: string; jupyter: string; feast: string; kfp: string; grafana: string; evidently: string };
 
 export type State = {
   version: 1;

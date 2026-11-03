@@ -4,9 +4,9 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { parse, parseAllDocuments } from "yaml";
 import { assetPath } from "../../src/lib/paths.js";
-import { loadState, rememberOptions } from "../../src/lib/state.js";
+import { loadState, rememberOptions, saveMlHosts } from "../../src/lib/state.js";
 import { ALL_STEPS, installSteps } from "../../src/steps/index.js";
-import { hostsFromIps, sslipHost } from "../../src/steps/ml/gateways.js";
+import { hostsFromIps, mlHosts, sslipHost } from "../../src/steps/ml/gateways.js";
 import { buildArgs } from "../../src/steps/ml/kfp-image.js";
 import { ML_APPS, STALE_PLATFORM_FILES, changedFiles, mlPlatformFiles, syncedAt } from "../../src/steps/ml/platform.js";
 import { SEED_JOBS, seedConfigMap, seedJob } from "../../src/steps/ml/seed.js";
@@ -16,7 +16,7 @@ import { useTempHome } from "../helpers/home.js";
 
 useTempHome();
 
-const hosts = hostsFromIps({ mlflow: "192.168.165.8", feast: "192.168.165.9", kubeflow: "192.168.165.7", monitoring: "192.168.165.10" });
+const hosts = hostsFromIps({ mlflow: "192.168.165.8", feast: "192.168.165.9", kubeflow: "192.168.165.7", monitoring: "192.168.165.10", evidently: "192.168.165.11" });
 const files = mlPlatformFiles(hosts);
 const file = (p: string) => files.find((f) => f.path === p)!.content;
 
@@ -42,7 +42,28 @@ test("sslip.io names carry the gateway IP with dashes, and names in one namespac
     feast: "feast.192-168-165-9.sslip.io",
     kfp: "kfp.192-168-165-7.sslip.io",
     grafana: "grafana.192-168-165-10.sslip.io",
+    evidently: "evidently.192-168-165-11.sslip.io",
   });
+});
+
+test("a lab whose gateway step ran before Evidently existed is told to rerun with --force", () => {
+  const { evidently: _, ...old } = hosts;
+  saveMlHosts(old as typeof hosts);
+  expect(() => mlHosts()).toThrow("ML host names for evidently are missing; run install --force to add them");
+  saveMlHosts(hosts);
+  expect(mlHosts()).toEqual(hosts);
+});
+
+test("Evidently runs the pinned multi-arch service image on a volume, behind the Service name the book uses", () => {
+  const deploy = parse(file("evidently/manifests/deployment.yaml"));
+  const c = deploy.spec.template.spec.containers[0];
+  expect(c.image).toBe("evidently/evidently-service:0.7.23");
+  expect(c.args).toEqual(["--port", "8000", "--workspace", "/app/workspace"]);
+  expect(deploy.spec.strategy.type).toBe("Recreate");
+  const svc = parse(file("evidently/manifests/service.yaml"));
+  expect(svc.metadata.name).toBe("evidently-service-internal");
+  expect(svc.spec.ports[0].port).toBe(8000);
+  expect(parse(file("apps/evidently.yaml")).spec.destination.namespace).toBe("evidently");
 });
 
 test("every rendered ML file parses and no placeholder is left", () => {
@@ -58,6 +79,7 @@ test("each Ingress gets its sslip.io name and MLflow allows that name as Host an
   expect(ingressHost("jupyter/manifests/ingress.yaml")).toBe(hosts.jupyter);
   expect(ingressHost("feast/manifests/ingress.yaml")).toBe(hosts.feast);
   expect(ingressHost("kfp/manifests/30-ingress.yaml")).toBe(hosts.kfp);
+  expect(ingressHost("evidently/manifests/ingress.yaml")).toBe(hosts.evidently);
   expect(parse(file("monitoring/values-ingress.yaml")).grafana.ingress.hosts).toEqual([hosts.grafana]);
   const env = parse(file("mlflow/values.yaml")).extraEnvVars;
   expect(env.MLFLOW_SERVER_ALLOWED_HOSTS.split(",")).toContain(hosts.mlflow);

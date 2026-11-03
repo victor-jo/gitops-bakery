@@ -1,0 +1,11 @@
+# Keeps Evidently projects and drift reports across pod restarts
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: evidently-workspace
+  namespace: evidently
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi

@@ -10,6 +10,7 @@ export const GATEWAY_NAMESPACES: Record<string, (keyof MlHosts)[]> = {
   feast: ["feast"],
   kubeflow: ["kfp"],
   monitoring: ["grafana"],
+  evidently: ["evidently"],
 };
 
 const PROBE = "bakery-gateway-probe";
@@ -48,6 +49,9 @@ export async function deleteGatewayProbes(): Promise<void> {
 export function mlHosts(): MlHosts {
   const hosts = loadState().ml?.hosts;
   if (!hosts) throw new Error("ML host names are not known yet; run install --with-ml again");
+  // A lab from an earlier version lacks the names of namespaces added since, and its gateway step is already marked done
+  const missing = Object.values(GATEWAY_NAMESPACES).flat().filter((n) => !hosts[n]);
+  if (missing.length) throw new Error(`ML host names for ${missing.join(", ")} are missing; run install --force to add them`);
   return hosts;
 }
 

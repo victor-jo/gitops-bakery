@@ -1,0 +1,34 @@
+# Evidently UI server; projects, reports and dashboards live as files in the workspace volume
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: evidently
+  namespace: evidently
+spec:
+  replicas: 1
+  # The workspace volume is ReadWriteOnce, so the old pod must let go of it before the new one starts
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: evidently}
+  template:
+    metadata:
+      labels: {app: evidently}
+    spec:
+      containers:
+        - name: evidently
+          # Multi-arch image, so it runs natively on arm64 nodes
+          image: evidently/evidently-service:0.7.23
+          args: ["--port", "8000", "--workspace", "/app/workspace"]
+          ports:
+            - {containerPort: 8000}
+          readinessProbe:
+            httpGet: {path: /api/version, port: 8000}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 50m, memory: 256Mi}
+            limits: {memory: 1Gi}
+          volumeMounts:
+            - {name: workspace, mountPath: /app/workspace}
+      volumes:
+        - name: workspace
+          persistentVolumeClaim: {claimName: evidently-workspace}
