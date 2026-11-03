@@ -134,3 +134,8 @@ Live upgrade on `honeyed-bagel` (state backed up, then `ml-storage`, `ml-gateway
   - The project was deleted through REST (`DELETE /api/projects/<id>` → 204) and recreated by the first run. Six KFP runs (0, 0.05, 0.1, 0.2, 0.3, 0.5) all SUCCEEDED.
   - Per-column scores at 0.5: Occupation 0.698, Workclass 0.522, Education 0.512, Native_country 0.35, Marital-Status 0.307, Relationship 0.269, Race 0.203, Sex 0.063.
   - Headless Chrome sometimes captures before the chart draws its lines (the axes are scaled, but there are no lines). Retrying with `--headless=new --virtual-time-budget=20000` drew them.
+- **Book 6.2.2 compared.** The book puts `detect_drift` between the feature and inference steps and says it stops the run on drift, but Listing 6.9 never stops: it only raises when the model or dataset is missing. It also charts missing values (Fig 6.20).
+  - Decision (user): add the stop gate and the missing-value metric and panel. Keep the separate pipeline.
+  - The gate uses Evidently's own rule, `share_drifted_columns >= drift_share` (0.5). It raises after `add_run`, so the failing run is still on the dashboard.
+  - Throwaway server: strength 0.3 raised, and `fail_on_drift=False` passed. The four panels were created, and the missing-value series was `[0, 0, 0]`.
+  - Live KFP: strength 0 SUCCEEDED (run e692654e). Strength 0.3 FAILED (b2b196e6), with log `RuntimeError: dataset drift: 0.88 …; stopping`, and its report was stored (8 reports).
