@@ -32,6 +32,8 @@ def _wire(task):
         task.set_env_variable(name, value)
     # The lab rebuilds its images under the same tag, so nodes must not run a cached copy
     kubernetes.set_image_pull_policy(task, "Always")
+    # A drift check must look at today's data; KFP would otherwise replay the first run's result for the same inputs
+    task.set_caching_options(False)
     return task
 
 
