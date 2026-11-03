@@ -2,6 +2,7 @@
 import { preflight } from "../preflight.js";
 import type { Step } from "../types.js";
 import { mlGatewaysStep } from "./gateways.js";
+import { mlDriftImageStep } from "./drift-image.js";
 import { mlKfpImageStep } from "./kfp-image.js";
 import { mlPlatformStep } from "./platform.js";
 import { mlSeedStep } from "./seed.js";
@@ -17,4 +18,4 @@ export const mlPreflightStep: Step = {
   },
 };
 
-export const ML_STEPS: Step[] = [mlPreflightStep, mlStorageStep, mlGatewaysStep, mlPlatformStep, mlSeedStep, mlKfpImageStep];
+export const ML_STEPS: Step[] = [mlPreflightStep, mlStorageStep, mlGatewaysStep, mlPlatformStep, mlSeedStep, mlKfpImageStep, mlDriftImageStep];

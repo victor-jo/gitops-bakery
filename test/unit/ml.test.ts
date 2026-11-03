@@ -24,7 +24,7 @@ test("without --with-ml the install steps are unchanged; with it the ML steps fo
   expect(installSteps(false)).toBe(ALL_STEPS);
   const ids = installSteps(true).map((s) => s.id);
   expect(ids.slice(0, ALL_STEPS.length)).toEqual(ALL_STEPS.map((s) => s.id));
-  expect(ids.slice(ALL_STEPS.length)).toEqual(["ml-preflight", "ml-storage", "ml-gateways", "ml-platform", "ml-seed", "ml-kfp-image"]);
+  expect(ids.slice(ALL_STEPS.length)).toEqual(["ml-preflight", "ml-storage", "ml-gateways", "ml-platform", "ml-seed", "ml-kfp-image", "ml-drift-image"]);
 });
 
 test("--with-ml is remembered, so a later install without the flag still installs the ML layer", () => {
@@ -174,6 +174,16 @@ test("the KFP image is built for the host architecture from the lab's own compon
   const context = assetPath("labs", "ml", "kfp", "pipeline", "src");
   expect(readdirSync(context).filter((n) => !n.startsWith(".") && n !== "__pycache__").sort())
     .toEqual(["Dockerfile", "components.py", "runtime-requirements.txt", "steps.py"]);
+});
+
+test("the drift image is built from its own context, and its pipeline reuses the inference image for the first two steps", () => {
+  const context = assetPath("labs", "ml", "drift", "pipeline", "src");
+  expect(readdirSync(context).filter((n) => !n.startsWith(".") && n !== "__pycache__").sort())
+    .toEqual(["Dockerfile", "drift_components.py", "drift_steps.py", "runtime-requirements.txt"]);
+  expect(readFileSync(join(context, "runtime-requirements.txt"), "utf8")).toMatch(/^evidently==0\.7\.23$/m);
+  const pipeline = readFileSync(assetPath("labs", "ml", "drift", "pipeline", "pipeline.py"), "utf8");
+  expect(pipeline).toContain("from components import read_entities, retrieve_features");
+  expect(pipeline).toContain("http://evidently-service-internal.evidently.svc.cluster.local:8000");
 });
 
 test("--with-ml raises the memory floor", () => {
