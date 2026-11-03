@@ -167,6 +167,15 @@ Open `$EVIDENTLY_URL`, project `income-classifier`. Each run adds a point to thr
 
 Sex has two values, so moving people to the second one barely changes it; that is why the share stops at 7 of 8. The book reaches Evidently at `localhost:8000`; `labs/ml/drift/pf.sh` opens that tunnel, and `EVIDENTLY_URL=http://localhost:8000` points `run_local.sh` at it.
 
+## Registering the pipelines in the KFP UI
+
+`run.py` submits a compiled package as a one-off run, so the pipeline never shows up under Pipelines. To register all three (and to start runs from the UI with "Create run"):
+
+```bash
+labs/ml/publish_pipelines.sh    # compiles, then registers income-batch-inference, income-drift-detection,
+                                # income-batch-inference-with-drift; reruns add a new version
+```
+
 ## Rebuilding the pipeline image
 
 The installer builds `kfp/pipeline/src` for the host architecture and pushes it. To rebuild it after editing `steps.py`:
