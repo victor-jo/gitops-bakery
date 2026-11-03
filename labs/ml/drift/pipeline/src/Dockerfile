@@ -1,0 +1,9 @@
+# Image for the drift-detection component, built for the host architecture by install --with-ml
+FROM python:3.13-slim
+
+WORKDIR /usr/local/src/kfp/components
+COPY runtime-requirements.txt runtime-requirements.txt
+RUN pip install --no-cache-dir -r runtime-requirements.txt
+
+RUN pip install --no-cache-dir kfp==2.18.0
+COPY . .

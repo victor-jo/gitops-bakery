@@ -1,0 +1,7 @@
+# Drift component image; pandas stays on 2.x because evidently 0.7.23 imports a helper pandas 3 removed
+evidently==0.7.23
+mlflow==3.16.0
+minio==7.2.20
+pandas==2.3.3
+numpy==2.5.4
+pyarrow==25.0.1
