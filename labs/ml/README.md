@@ -136,7 +136,15 @@ Feast serves the very users the model was trained on, so the real comparison alw
 
 Each report carries the strength as tag `drift-strength-<s>` and metadata `drift_strength`.
 
-Open `$EVIDENTLY_URL`, project `income-classifier`. Each run adds a point to "Share of drifted columns". The book reaches Evidently at `localhost:8000`; `labs/ml/drift/pf.sh` opens that tunnel, and `EVIDENTLY_URL=http://localhost:8000` points `run_local.sh` at it.
+Open `$EVIDENTLY_URL`, project `income-classifier`. Each run adds a point to three panels:
+
+| Panel | Shows |
+|---|---|
+| Share of drifted columns | columns past the 0.1 threshold, so it steps: 0, 0, 0.5, 0.75, 0.875 |
+| Drift score per column (Jensen-Shannon) | the raw score of all 8 columns, rising smoothly with `drift_strength` (Occupation 0.08 → 0.70, Sex 0.006 → 0.06) |
+| Drifted columns (last run) | the latest count; it reads "no value" when that count is 0 |
+
+Sex has two values, so moving people to the second one barely changes it; that is why the share stops at 7 of 8. The book reaches Evidently at `localhost:8000`; `labs/ml/drift/pf.sh` opens that tunnel, and `EVIDENTLY_URL=http://localhost:8000` points `run_local.sh` at it.
 
 ## Rebuilding the pipeline image
 

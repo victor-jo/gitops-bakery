@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-PANELS = ("Share of drifted columns", "Drifted columns (last run)")
+PANELS = ("Share of drifted columns", "Drift score per column (Jensen-Shannon)", "Drifted columns (last run)")
 
 
 def _minio_client():
@@ -43,7 +43,7 @@ def load_reference(uri: str) -> pd.DataFrame:
     return pd.read_csv(local)
 
 
-def ensure_project(ws, name: str):
+def ensure_project(ws, name: str, columns: list):
     from evidently.sdk.models import PanelMetric
     from evidently.sdk.panels import counter_panel, line_plot_panel
 
@@ -56,7 +56,11 @@ def ensure_project(ws, name: str):
     if PANELS[0] not in existing:
         project.dashboard.add_panel(line_plot_panel(title=PANELS[0], values=[share]))
     if PANELS[1] not in existing:
-        project.dashboard.add_panel(counter_panel(title=PANELS[1], values=[count], aggregation="last", size="half"))
+        # The share above only counts columns past the 0.1 threshold; the raw scores show drift growing before that
+        scores = [PanelMetric(legend=c, metric="ValueDrift", metric_labels={"column": c}) for c in columns]
+        project.dashboard.add_panel(line_plot_panel(title=PANELS[1], values=scores))
+    if PANELS[2] not in existing:
+        project.dashboard.add_panel(counter_panel(title=PANELS[2], values=[count], aggregation="last", size="half"))
     return project
 
 
@@ -102,7 +106,7 @@ def detect_drift(features_path: str, model_name: str, model_alias: str, referenc
     )
 
     ws = RemoteWorkspace(evidently_url)
-    project = ensure_project(ws, project_name)
+    project = ensure_project(ws, project_name, columns)
     ws.add_run(project.id, snapshot, include_data=False)
 
     drifted = next(m["value"] for m in snapshot.dict()["metrics"] if m["metric_name"].startswith("DriftedColumnsCount"))
