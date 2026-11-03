@@ -167,6 +167,30 @@ Open `$EVIDENTLY_URL`, project `income-classifier`. Each run adds a point to thr
 
 Sex has two values, so moving people to the second one barely changes it; that is why the share stops at 7 of 8. The book reaches Evidently at `localhost:8000`; `labs/ml/drift/pf.sh` opens that tunnel, and `EVIDENTLY_URL=http://localhost:8000` points `run_local.sh` at it.
 
+## 7. Serve with BentoML and watch drift per request
+
+`labs/ml/serving` is the book's drift-aware BentoML service, on BentoML 1.4 and run with plain `docker run` (no Yatai). Each `POST /predict {"user_id": ...}` reads that user's Feast online features, scores them with the champion baked into the image, and adds the row to a 100-row window; once per 100 requests the window goes to Evidently project `income-classifier-realtime`.
+
+```bash
+labs/ml/feast/pf.sh                            # the container reaches Garage and Valkey through these tunnels
+labs/ml/serving/build.sh                       # import the champion into BentoML, bentoml build, containerize (host arch)
+labs/ml/serving/run.sh                         # docker run on the kind network, port 3001
+labs/ml/serving/send_requests.py 500           # needs the kfp-s3 key in AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+DRIFT_STRENGTH=0.3 labs/ml/serving/run.sh      # restart with shifted windows to see drift detected
+```
+
+Measured on the lab: 500 real users gave 118 `>50K` (23.6%; the batch pipeline gives 21.2%) and windows with 0-1 drifted columns; with `DRIFT_STRENGTH=0.3`, 6-8 of 8.
+
+Three things differ from the book on purpose:
+
+| Book | Here | Why |
+|---|---|---|
+| `pd.get_dummies(drop_first=True)` on the request | `drop_first=False`, then the training columns | one row has one category per column, so `drop_first` dropped all of them and every user scored `<=50K` (199 of 199) |
+| Jensen-Shannon on 100 rows | chi-square test (p < 0.05) | 100 rows against 30,162 put Native_country (41 values), Education and Occupation above 0.1 in every window by chance |
+| a report on every request once the window is full | one report per 100 requests | the same window, without running the full report on each call |
+
+`run.sh` and `send_requests.py` use `127.0.0.1:3001`: OrbStack also listens on `::1` for the mapped port but never answers there, so `localhost` hangs.
+
 ## Registering the pipelines in the KFP UI
 
 `run.py` submits a compiled package as a one-off run, so the pipeline never shows up under Pipelines. To register all three (and to start runs from the UI with "Create run"):

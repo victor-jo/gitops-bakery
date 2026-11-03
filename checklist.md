@@ -45,3 +45,10 @@ Plan: `docs/superpowers/plans/2026-10-20-gitops-bakery-v0.1.md`
 - [x] 5. Unit tests (118 pass) and docs (READMEs, architecture, traps 33–35, labs/ml section 6)
 - [x] 6. Live upgrade on `honeyed-bagel`: install, retrain, champion, drift on Mac and in KFP
 - [ ] 7. Push branch and open the PR (ask first)
+
+# BentoML drift service on Docker (book 6.3; decisions in context-notes.md)
+
+- [x] 1. `labs/ml/serving`: BentoML 1.4.39 service with a 100-row drift window, the champion baked in at build time
+- [x] 2. build.sh (import model, bentoml build, containerize), run.sh (docker run on the kind network), send_requests.py
+- [x] 3. Live check: 200 requests → reports in Evidently project `income-classifier-realtime`
+- [x] 4. Docs (labs/ml README, traps) and tests

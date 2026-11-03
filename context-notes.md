@@ -143,3 +143,22 @@ Live upgrade on `honeyed-bagel` (state backed up, then `ml-storage`, `ml-gateway
   - Decision (user, option 1): add the book's layout as its own pipeline, `income-batch-inference-with-drift` (`labs/ml/drift/pipeline/inference_with_drift.py`). Chapter 5's pipeline stays unchanged.
   - Live KFP: strength 0 → all five steps SUCCEEDED (run d24833bd). Strength 0.3 → detect-drift FAILED, and run-inference and write-predictions never started (run 524c2265).
 - **Pipelines registered in KFP.** `run.py` only submitted packages as one-off runs, so nothing appeared under Pipelines. `labs/ml/publish_pipelines.sh` compiles the three pipelines and uploads them. A second run uploads a version named with the UTC timestamp instead of failing on the existing name. Ran it twice: three pipelines, two versions each.
+
+# BentoML drift service on Docker (2026-11-03)
+
+Decisions (user):
+- **BentoML 1.4.39 with the new `@bentoml.service` API.** The book uses 1.1.10 (`bentoml.Service` + runners). 1.4.40 was only 11 days old, so 1.4.39 was chosen. It installs on python:3.13 with feast 0.67, mlflow 3.16, evidently 0.7.23 and pandas 2.3.3.
+- **The model is baked in at build time,** as in the book. `bentoml.mlflow.import_model("income-classifier", "models:/income-classifier-best@champion")` worked from the Mac, and the pyfunc predicted. The column list travels in `custom_objects`.
+- **Reports go to a separate project, `income-classifier-realtime`.** The service creates it and its panels when missing, so no project ID has to be copied into .env as in the book.
+
+Facts:
+- A container on the `kind` Docker network reaches the cloud-provider-kind gateways by their sslip.io names (MLflow /health 200, Evidently /api/version 200).
+- It reaches Garage and Valkey through the Mac tunnels at `host.docker.internal:3900` / `:16379`.
+- The directory is `labs/ml/serving`, not `bentoml`, because a folder named `bentoml` on the path would shadow the package.
+- **Live run.** Built `income-classifier-drift:<tag>`. A container on the kind network with `-p 3001:3000` was ready in about 5 s.
+  - The first 199 requests all came back `<=50K`. Single-row `get_dummies(drop_first=True)` returns no columns. This bug is in the book's `InputMapper` too. After the fix: 118 of 500 `>50K`.
+  - With Jensen-Shannon, every 100-row window drifted on 2–4 columns: Native_country, Education and Occupation sat at about 0.17, 0.14–0.21 and 0.09–0.18.
+  - Decision (user): use chi-square for the realtime window only. The batch window keeps Jensen-Shannon. The panel title changes with the method.
+  - After the switch, the five real windows gave 4, 1, 0, 0, 0 drifted columns. The first window reproduced offline with the same 100 users (Workclass p=0.001, Education p=0.002), so that group really differs, by chance.
+  - With `DRIFT_STRENGTH=0.3`: 7, 8, 6.
+  - The project `income-classifier-realtime` was recreated, and the service is left running with strength 0.
