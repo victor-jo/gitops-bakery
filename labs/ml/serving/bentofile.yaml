@@ -1,5 +1,10 @@
 # Bento for the income classifier with drift reporting; built from labs/ml so it can include the drift helpers
 service: "serving.service:IncomeClassifier"
+# Without this, BentoML shows labs/ml/README.md (the build context's README) as the Swagger page description
+description: |
+  Income classifier from the gitops-bakery ML lab. POST /predict with {"user_id": "..."} returns the income band
+  from the user's Feast online features, and every 100 requests become an Evidently drift report in the
+  project income-classifier-realtime.
 include:
   - "serving/service.py"
   - "serving/monitoring.py"

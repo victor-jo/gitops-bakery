@@ -17,5 +17,11 @@ docker run -d --name income-clf-drift --network kind -p 3001:3000 \
   -e DRIFT_STRENGTH="${DRIFT_STRENGTH:-0}" -e DRIFT_WINDOW_SIZE="${DRIFT_WINDOW_SIZE:-100}" \
   "income-classifier-drift:${TAG#*:}" >/dev/null
 echo "started income-clf-drift (DRIFT_STRENGTH=${DRIFT_STRENGTH:-0}); waiting for http://127.0.0.1:3001/readyz"
-for _ in $(seq 1 90); do curl -fs -m 2 127.0.0.1:3001/readyz >/dev/null 2>&1 && { echo ready; exit 0; }; sleep 2; done
+# OrbStack routes the Mac to container IPs, so the kind-network address also gets an sslip.io name, like the ML UIs.
+# Docker may hand out another address after a restart, so the name is printed each time.
+IP=$(docker inspect income-clf-drift -f '{{.NetworkSettings.Networks.kind.IPAddress}}')
+for _ in $(seq 1 90); do
+  curl -fs -m 2 127.0.0.1:3001/readyz >/dev/null 2>&1 && { echo "ready: http://bentoml.${IP//./-}.sslip.io:3000 (or http://127.0.0.1:3001)"; exit 0; }
+  sleep 2
+done
 echo "not ready; see: docker logs income-clf-drift" >&2; exit 1

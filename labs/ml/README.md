@@ -191,6 +191,8 @@ Three things differ from the book on purpose:
 
 `run.sh` and `send_requests.py` use `127.0.0.1:3001`: OrbStack also listens on `::1` for the mapped port but never answers there, so `localhost` hangs.
 
+The Swagger UI is at the address `run.sh` prints, e.g. `http://bentoml.192-168-165-12.sslip.io:3000`: OrbStack routes the Mac to container IPs on the kind network, so the container gets an sslip.io name like the ML UIs (port 3000, the container's own). Docker may give the container another address after a restart, which is why the name is printed each time. The bentofile sets its own `description`; otherwise BentoML shows the build context's `labs/ml/README.md` on that page.
+
 ## Registering the pipelines in the KFP UI
 
 `run.py` submits a compiled package as a one-off run, so the pipeline never shows up under Pipelines. To register all three (and to start runs from the UI with "Create run"):
