@@ -22,7 +22,8 @@ def should_promote(
     """Decide whether `new` replaces `champion`; returns (promote, reason naming the deciding rule).
 
     The couple rule needs both models to have a couple AUC. An older champion without one
-    skips that rule, but a missing couple_auc in `new` raises KeyError once the holdout is large enough.
+    skips that rule. A missing couple_auc in `new` raises KeyError once the holdout is large enough,
+    but only when a champion exists; with no champion the model is promoted without reading couple_auc.
     """
     # NaN or inf compares False against every threshold, so it must be rejected explicitly
     for name in ("val_auc", "precision_10"):
@@ -45,6 +46,6 @@ def should_promote(
         if not math.isfinite(new_couple):
             return False, "couple_auc is not finite"
         if "couple_auc" in champion and new_couple < champion["couple_auc"]:
-            return False, f"couple_auc {new_couple:.4f} < champion {champion['couple_auc']:.4f}"
+            return False, f"couple_auc {new_couple:.6f} < champion {champion['couple_auc']:.6f}"
 
     return True, "all gates passed"
