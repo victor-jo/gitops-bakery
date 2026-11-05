@@ -13,8 +13,8 @@ export const KFP_PROJECT = "kfp";
 export const KFP_IMAGE = "income-pipeline:0.1.0";
 
 // `kfp component build` always targets amd64, so the image is built straight from the Dockerfile it generated
-export function buildArgs(arch: string, tag: string, context: string): string[] {
-  return ["build", "--platform", `linux/${arch}`, "-t", tag, context];
+export function buildArgs(arch: string, tag: string, context: string, dockerfile?: string): string[] {
+  return ["build", "--platform", `linux/${arch}`, "-t", tag, ...(dockerfile ? ["-f", dockerfile] : []), context];
 }
 
 // A throwaway Docker config keeps the Harbor login out of the user's own ~/.docker, while reusing their CLI plugins and daemon
@@ -28,7 +28,7 @@ async function isolatedDockerEnv(): Promise<{ env: Record<string, string>; clean
 
 // The Mac pushes through Harbor's host port; pods pull the same repository by the node's name (see labs/ml/env.sh).
 // Each lab image is built for the host architecture from a directory of this package and lands in the public "kfp" project.
-export async function pushLabImage(ctx: Ctx, image: string, context: string): Promise<void> {
+export async function pushLabImage(ctx: Ctx, image: string, context: string, dockerfile?: string): Promise<void> {
   // Harbor's amd64 database restarts now and then under emulation when its 1 s probe times out, so wait for it first
   await waitFor("Harbor API", async () => {
     const r = await fetch(`${HARBOR_HOST_URL}/api/v2.0/health`);
@@ -43,7 +43,7 @@ export async function pushLabImage(ctx: Ctx, image: string, context: string): Pr
       input: ctx.secrets.harborAdmin,
       redact: [ctx.secrets.harborAdmin],
     });
-    await run("docker", buildArgs(ctx.arch, push, context), { env: docker.env });
+    await run("docker", buildArgs(ctx.arch, push, context, dockerfile), { env: docker.env });
     await run("docker", ["push", push], { env: docker.env });
   } finally {
     docker.cleanup();
@@ -55,5 +55,17 @@ export const mlKfpImageStep: Step = {
   title: "KFP component image in Harbor",
   async run(ctx) {
     await pushLabImage(ctx, KFP_IMAGE, assetPath("labs", "ml", "kfp", "pipeline", "src"));
+  },
+};
+
+export const RECOMMENDER_IMAGE = "recommender-pipeline:0.1.0";
+
+// The build context is the whole recommender package so the image carries it; the Dockerfile lives under pipeline/src
+export const mlRecommenderImageStep: Step = {
+  id: "ml-recommender-image",
+  title: "Recommender component image in Harbor",
+  async run(ctx) {
+    const context = assetPath("labs", "ml", "recommender");
+    await pushLabImage(ctx, RECOMMENDER_IMAGE, context, join(context, "pipeline", "src", "Dockerfile"));
   },
 };

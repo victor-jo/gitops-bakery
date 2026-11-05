@@ -4,6 +4,8 @@
 kfp/out/
 kfp/pipeline/*.yaml
 drift/pipeline/*.yaml
+recommender/.venv-rec
+recommender/pipeline/*.yaml
 kfp/smoke/*.yaml
 feast/repo/
 kfp/column_list/
@@ -11,3 +13,4 @@ __pycache__/
 
 # Built Bento tag of the serving exercise
 serving/.bento-tag
+recommender/serving/.bento-tag

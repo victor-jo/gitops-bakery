@@ -24,7 +24,7 @@ test("without --with-ml the install steps are unchanged; with it the ML steps fo
   expect(installSteps(false)).toBe(ALL_STEPS);
   const ids = installSteps(true).map((s) => s.id);
   expect(ids.slice(0, ALL_STEPS.length)).toEqual(ALL_STEPS.map((s) => s.id));
-  expect(ids.slice(ALL_STEPS.length)).toEqual(["ml-preflight", "ml-storage", "ml-gateways", "ml-platform", "ml-seed", "ml-kfp-image", "ml-drift-image"]);
+  expect(ids.slice(ALL_STEPS.length)).toEqual(["ml-preflight", "ml-storage", "ml-gateways", "ml-platform", "ml-seed", "ml-kfp-image", "ml-drift-image", "ml-recommender-image"]);
 });
 
 test("--with-ml is remembered, so a later install without the flag still installs the ML layer", () => {
@@ -180,6 +180,12 @@ test("the KFP image is built for the host architecture from the lab's own compon
   const context = assetPath("labs", "ml", "kfp", "pipeline", "src");
   expect(readdirSync(context).filter((n) => !n.startsWith(".") && n !== "__pycache__").sort())
     .toEqual(["Dockerfile", "components.py", "kfp_config.ini", "runtime-requirements.txt", "steps.py"]);
+});
+
+test("the recommender bucket belongs to the kfp key, and its image is built with the Dockerfile from the package root", () => {
+  expect(ML_BUCKETS).toContain("recommender");
+  expect(grantCommands()).toContainEqual(["bucket", "allow", "--read", "--write", "--owner", "recommender", "--key", "kfp"]);
+  expect(buildArgs("arm64", "t", "/ctx", "/ctx/pipeline/src/Dockerfile")).toEqual(["build", "--platform", "linux/arm64", "-t", "t", "-f", "/ctx/pipeline/src/Dockerfile", "/ctx"]);
 });
 
 test("the drift image is built from its own context, and its pipeline reuses the inference image for the first two steps", () => {

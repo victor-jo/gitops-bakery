@@ -1,0 +1,12 @@
+# Recommender pipeline components; pins match requirements.txt, torch comes from the CPU wheel index
+--extra-index-url https://download.pytorch.org/whl/cpu
+pandas==2.3.3
+pyarrow==25.0.1
+numpy==2.5.4
+torch==2.15.0
+scikit-learn==1.9.1
+mlflow==3.16.0
+boto3==1.43.117
+minio==7.2.20
+evidently==0.7.23
+feast[redis,aws]==0.67.0

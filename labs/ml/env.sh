@@ -14,6 +14,7 @@ for key in ("mlflow", "jupyter", "feast", "kfp", "evidently"):
         print(f"export {key.upper()}_URL=http://{hosts[key]}")
 print(f"export KFP_IMAGE={name}-control-plane:30001/kfp/income-pipeline:0.1.0")
 print(f"export DRIFT_IMAGE={name}-control-plane:30001/kfp/drift-pipeline:0.1.0")
+print(f"export REC_IMAGE={name}-control-plane:30001/kfp/recommender-pipeline:0.1.0")
 PY
 )"
 unset _bakery_state

@@ -4,14 +4,15 @@ import { randomSecret, updateSecrets, type Secrets } from "../../lib/secrets.js"
 import { garage, parseGarageKey } from "../garage.js";
 import type { Step } from "../types.js";
 
-export const ML_BUCKETS = ["mlflow", "mlflow-datasets", "feature-registry", "feature-data-sets", "inference-datasets", "mlpipeline"];
+export const ML_BUCKETS = ["mlflow", "mlflow-datasets", "feature-registry", "feature-data-sets", "inference-datasets", "mlpipeline", "recommender"];
 
 // Each key gets only the buckets its consumer touches; "read" keys can fetch features but not rewrite them
 export const ML_KEYS: Record<string, { owner: string[]; read: string[] }> = {
   mlflow: { owner: ["mlflow", "mlflow-datasets"], read: [] },
   feast: { owner: ["feature-registry", "feature-data-sets"], read: [] },
+  // The recommender pipelines keep their data, Feast registry and model inputs in the recommender bucket
   // The drift pipeline also reads the champion's reference features, which the training notebook stored in mlflow-datasets
-  kfp: { owner: ["inference-datasets"], read: ["feature-registry", "feature-data-sets", "mlflow-datasets"] },
+  kfp: { owner: ["inference-datasets", "recommender"], read: ["feature-registry", "feature-data-sets", "mlflow-datasets"] },
   "kfp-pipeline": { owner: ["mlpipeline"], read: [] },
 };
 

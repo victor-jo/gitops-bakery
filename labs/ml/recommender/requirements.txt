@@ -1,0 +1,17 @@
+# Mac-side packages for the movie recommender (python 3.13); install with: pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
+mlflow==3.16.0
+feast[redis,aws]==0.67.0
+evidently==0.7.23
+pandas==2.3.3
+numpy==2.5.4
+pyarrow==25.0.1
+kfp==2.18.0
+kfp-kubernetes==2.18.0
+scikit-learn==1.9.1
+torch==2.15.0
+bentoml==1.4.40
+fastapi==0.162.0
+httpx==0.28.1
+pytest==9.2.0
+minio==7.2.20
+boto3==1.43.117

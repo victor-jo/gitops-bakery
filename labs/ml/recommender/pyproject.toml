@@ -1,0 +1,11 @@
+[project]
+name = "recommender"
+version = "0.1.0"
+requires-python = ">=3.13"
+
+[tool.setuptools]
+packages = ["recommender"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
