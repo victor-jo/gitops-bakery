@@ -1,0 +1,7 @@
+# Keeps the local venv, caches, tests and build outputs out of the recommender image's build context
+.venv-rec
+**/__pycache__
+.pytest_cache
+tests
+pipeline/*.yaml
+serving/.bento-tag
