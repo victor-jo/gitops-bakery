@@ -61,3 +61,8 @@
 - Marking the first one as watched and rating it 👍 for both removed it from the next request (still 10 items).
 - `docker restart movie-rec`: ready after 6 s, the list was identical and no marked or watched movie came back.
 - Cleanup: the 45 synthetic event objects were deleted from `s3://recommender/feedback/events/` (the prefix was empty before), and the container restarted so the couple starts clean.
+
+## 2026-11-05 What Feast does here
+- Feast is a write-through mirror. The authoritative record is the event log in `s3://recommender/feedback/events/`; the service replays it at start-up and keeps both tastes in memory.
+- The service pushes each viewer's folded taste to Feast's online store (Valkey `db=2`, `viewer_taste`) after every mark and materializes the movie features after each catalog reload, so other consumers can read them.
+- Nothing in the app reads them back yet. A reader inside the cluster would also need the Valkey secret in the `kubeflow` namespace.

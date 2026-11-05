@@ -73,7 +73,7 @@ for p in catalog training monitoring; do .venv-rec/bin/python pipeline/run.py $p
 | `movie-recommender-training` | Monday 06:00 | `0 0 21 * * 0` |
 | `movie-recommender-monitoring` | Monday 07:00 | `0 0 22 * * 0` |
 
-- Creating is idempotent: a recurring run with the same name is deleted first, so rerunning the command never leaves duplicates.
+- Creating is idempotent: the new recurring run is created first, then every older one with the same name is deleted, so rerunning the command never leaves duplicates and a failed create keeps the old schedule.
 - All three use `max_concurrency=1` and `no_catchup`. That matters most for the catalog: the first Coupang pass takes hours, and a daily trigger must not start a second crawl while one is running. After the first pass only new URLs and 300 rechecks (about 5 minutes) are fetched, so the daily run is short.
 - Check them in the KFP UI (Recurring runs), or list them:
 
@@ -92,6 +92,8 @@ On the Mac itself use `http://127.0.0.1:3100`, not `localhost`: OrbStack also li
 The page has four screens: choose a profile, pick favourite genres, mark posters 👍/👎, and this weekend's candidates. After watching one, press "같이 봤어요" and both rate it.
 
 Every mark is an event in `s3://recommender/feedback/events/`, one JSON object per mark, so the couple's state survives a restart or a rebuild. The same marks refold that person's taste vector in the service and push it to Feast (`viewer_taste`).
+
+Feast is a write-through mirror, not a source. The event log in Garage is authoritative: the service rebuilds both tastes from it at start-up and keeps them in memory. It pushes each viewer's taste to Feast's online store after every mark and materializes the movie features after each catalog reload, so other consumers can read them. Nothing in the app reads them back yet.
 
 ## After an OrbStack restart
 
