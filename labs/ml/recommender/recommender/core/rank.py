@@ -4,7 +4,10 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from recommender.config import MAX_RESULTS, MIN_RESULTS, SERVICES, STRONG_DISLIKE_P, VETO_P, VIEWERS
+from datetime import datetime, timedelta, timezone
+
+from recommender.config import (MAX_RESULTS, MIN_RESULTS, RECENCY_BONUS, RECENCY_YEARS, SERVICES,
+                                STRONG_DISLIKE_P, VETO_P, VIEWERS)
 from recommender.core.state import CoupleState
 from recommender.genres import KOREAN_LABEL
 
@@ -26,6 +29,17 @@ def and_particle(title: str) -> str:
     return "와(과)"
 
 
+def this_year_kst() -> int:
+    return datetime.now(timezone(timedelta(hours=9))).year
+
+
+def recency(release_year, this_year: int) -> np.ndarray:
+    """1.0 for this year's movies, fading linearly to 0 at RECENCY_YEARS old; 0 when the year is unknown."""
+    years = pd.array(release_year, dtype="Int64")
+    age = (this_year - years).to_numpy(dtype="float64", na_value=np.inf)
+    return np.clip(1.0 - age / RECENCY_YEARS, 0.0, 1.0)
+
+
 def _unit(m: np.ndarray) -> np.ndarray:
     n = np.linalg.norm(m, axis=-1, keepdims=True)
     return m / np.maximum(n, 1e-9)
@@ -38,7 +52,8 @@ def _sigmoid(x: np.ndarray) -> np.ndarray:
 
 
 def recommend(
-    catalog: pd.DataFrame, global_bias: float, taste: dict[str, np.ndarray | None], couple: CoupleState
+    catalog: pd.DataFrame, global_bias: float, taste: dict[str, np.ndarray | None], couple: CoupleState,
+    this_year: int | None = None,
 ) -> list[dict]:
     n = len(catalog)
     if n == 0:
@@ -76,6 +91,9 @@ def recommend(
     low = np.minimum(probs["me"], probs["wife"])
     cold = not any(vs.liked or vs.disliked or vs.genres for vs in couple.viewers.values())
     score = catalog["popularity_kr"].to_numpy(dtype=np.float64) if cold else low
+    if "release_year" in catalog:
+        # Recent releases move up the list; the veto below still uses the raw probabilities
+        score = score + RECENCY_BONUS * recency(catalog["release_year"], this_year or this_year_kst())
 
     # Once anyone has given feedback the veto binds both viewers; in cold mode only known tastes veto.
     veto = np.zeros(n, dtype=bool)

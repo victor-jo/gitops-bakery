@@ -268,3 +268,12 @@ def test_event_keys_sort_by_time_under_the_feedback_prefix():
     k2 = event_key(Event("mark", "me", "a", True, None, _at(2)))
     assert k1.startswith("feedback/events/2026-11-05T12") and k1.endswith(".json")
     assert k1 < k2 and k1 != event_key(Event("mark", "me", "a", True, None, _at(1)))
+
+
+def test_onboarding_puts_the_newest_movies_first():
+    cat = _catalog()
+    cat["release_year"] = pd.array([2001, 2026, 2010, 2026, 2024, 2020, None], dtype="Int64")
+    c = _client(MemStore(catalog=cat))
+    c.post("/api/viewer/me/genres", json={"genres": ["drama"]})
+    # Newest year first; within a year the more popular one first; a missing year goes last
+    assert _keys(c.get("/api/onboarding", params={"viewer": "me"})) == ["c", "a2", "d", "b", "a", "f"]

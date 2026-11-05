@@ -66,3 +66,9 @@
 - Feast is a write-through mirror. The authoritative record is the event log in `s3://recommender/feedback/events/`; the service replays it at start-up and keeps both tastes in memory.
 - The service pushes each viewer's folded taste to Feast's online store (Valkey `db=2`, `viewer_taste`) after every mark and materializes the movie features after each catalog reload, so other consumers can read them.
 - Nothing in the app reads them back yet. A reader inside the cluster would also need the Valkey secret in the `kubeflow` namespace.
+
+## 2026-11-05 — newer movies first (after the first real use)
+
+After trying it, the owner wanted recent releases to come up more. Two changes:
+- Weekend picks: the ranking score gets `RECENCY_BONUS = 0.15` for a movie released this year, fading linearly to 0 at 5 years old (`RECENCY_YEARS`). The veto still uses the raw probabilities, so a recent movie one of them is predicted to dislike is not let through.
+- "Mark what you've seen" grid: newest release year first, then the more popular one; movies with no known year go last.

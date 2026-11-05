@@ -60,7 +60,10 @@ class _Catalog:
         self.genres = [list(g) for g in df["genres"]]
         self.popularity = df["popularity_kr"].to_numpy(dtype=np.float64)
         self.row = {k: i for i, k in enumerate(df["movie_key"])}
-        self.by_popularity = np.argsort(-self.popularity, kind="stable")
+        # Onboarding order: newest release year first, then the more popular; unknown years last
+        years = (pd.array(df["release_year"], dtype="Int64").to_numpy(dtype="float64", na_value=-np.inf)
+                 if "release_year" in df else np.zeros(len(df)))
+        self.onboarding_order = np.lexsort((-self.popularity, -years))
 
 
 class _Couple:
@@ -170,7 +173,7 @@ def create_app(store: Store) -> FastAPI:
             chosen, marked = set(vs.genres), vs.liked | vs.disliked
         df = cat.df
         keys = df["movie_key"].to_numpy()
-        rows = [i for i in cat.by_popularity
+        rows = [i for i in cat.onboarding_order
                 if keys[i] not in marked and (not chosen or not chosen.isdisjoint(cat.genres[i]))]
         out = []
         for i in rows[offset:offset + limit]:

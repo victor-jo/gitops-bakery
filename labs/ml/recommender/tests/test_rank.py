@@ -159,3 +159,19 @@ def test_reason_falls_back_to_genre_when_the_liked_movie_is_not_similar():
     out = recommend(cat, 0.0, taste, c)
     assert out[0]["movie_key"] == "cand"
     assert out[0]["reason"] == "드라마 장르에서 한국 인기작이에요"
+
+
+def test_recency_bonus_lifts_recent_movies_without_weakening_the_veto():
+    cat = _cat([("old", 0.80, 0.80), ("new", 0.72, 0.72), ("bad_new", 0.90, 0.30)])
+    cat["release_year"] = pd.array([1995, 2026, 2026], dtype="Int64")
+    out = recommend(cat, 0.0, TASTE, _warm(), this_year=2026)
+    assert [r["movie_key"] for r in out if not r["gamble"]] == ["new", "old"]
+    # The bonus only reorders survivors; a movie one viewer dislikes still never ranks as a normal pick
+    assert all(r["gamble"] for r in out if r["movie_key"] == "bad_new")
+
+
+def test_recency_fades_over_five_years_and_ignores_missing_years():
+    from recommender.core.rank import recency
+
+    years = pd.array([2026, 2025, 2021, 1990, None], dtype="Int64")
+    assert recency(years, 2026).tolist() == pytest.approx([1.0, 0.8, 0.0, 0.0, 0.0])
