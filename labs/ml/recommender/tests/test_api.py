@@ -277,3 +277,12 @@ def test_onboarding_puts_the_newest_movies_first():
     c.post("/api/viewer/me/genres", json={"genres": ["drama"]})
     # Newest year first; within a year the more popular one first; a missing year goes last
     assert _keys(c.get("/api/onboarding", params={"viewer": "me"})) == ["c", "a2", "d", "b", "a", "f"]
+
+
+def test_onboarding_puts_korean_movies_first_within_a_year():
+    cat = _catalog()
+    cat["release_year"] = pd.array([2026] * 7, dtype="Int64")
+    cat["korean"] = [False, True, False, False, True, False, False]
+    c = _client(MemStore(catalog=cat))
+    c.post("/api/viewer/me/genres", json={"genres": ["drama"]})
+    assert _keys(c.get("/api/onboarding", params={"viewer": "me"})) == ["d", "a2", "a", "b", "c", "f"]

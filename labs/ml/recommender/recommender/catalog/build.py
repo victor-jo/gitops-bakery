@@ -15,6 +15,11 @@ def _tmdb(value) -> str | None:
     return text or None
 
 
+def _is_korean(original_title) -> bool:
+    """A movie counts as Korean when its original title is written in Hangul."""
+    return isinstance(original_title, str) and any("가" <= ch <= "힣" for ch in original_title)
+
+
 def _year(value) -> int | None:
     return None if value is None or pd.isna(value) else int(value)
 
@@ -29,10 +34,11 @@ def match_coupang(coupang: pd.DataFrame, search: Callable[[str, int | None], dic
     for cid, title, hint in zip(coupang.coupang_id, coupang.title, coupang.year_hint):
         if cid not in known or isinstance(known[cid], str):
             found = search(title, _year(hint))
-            known[cid] = ({"tmdb_id": _tmdb(found["tmdb_id"]), "release_year": _year(found.get("release_year"))}
-                          if found else None)
+            known[cid] = ({"tmdb_id": _tmdb(found["tmdb_id"]), "release_year": _year(found.get("release_year")),
+                           "original_title": found.get("original_title")} if found else None)
     out = coupang.copy()
     out["tmdb_id"] = [(known[c] or {}).get("tmdb_id") for c in out.coupang_id]
+    out["original_title"] = [(known[c] or {}).get("original_title") for c in out.coupang_id]
     out["release_year"] = pd.array([(known[c] or {}).get("release_year") for c in out.coupang_id], dtype="Int64")
     return out
 
@@ -103,6 +109,7 @@ def build_catalog(justwatch: pd.DataFrame, coupang: pd.DataFrame, new: pd.DataFr
             "services": sorted({*j.service, *(["cou"] if len(c) else [])}),
             "popularity_kr": float(max([*j["pop"], *c["pop"]])),
             "added_on": day, "new_this_week": day is not None and day >= week_ago,
+            "korean": any(_is_korean(t) for t in [*j.get("original_title", []), *c.get("original_title", [])]),
         })
     out = pd.DataFrame(rows)
     for col in ("movielens_id", "release_year"):

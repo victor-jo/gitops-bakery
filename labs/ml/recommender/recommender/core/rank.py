@@ -6,7 +6,7 @@ import pandas as pd
 
 from datetime import datetime, timedelta, timezone
 
-from recommender.config import (MAX_RESULTS, MIN_PER_SERVICE, MIN_RESULTS, RECENCY_BONUS, RECENCY_YEARS, SERVICES,
+from recommender.config import (KOREAN_BONUS, MAX_RESULTS, MIN_PER_SERVICE, MIN_RESULTS, RECENCY_BONUS, RECENCY_YEARS, SERVICES,
                                 STRONG_DISLIKE_P, VETO_P, VIEWERS)
 from recommender.core.state import CoupleState
 from recommender.genres import KOREAN_LABEL
@@ -96,6 +96,8 @@ def recommend(
         # recent hit outranks an obscure new title; the veto below still uses the raw probabilities
         popularity = catalog["popularity_kr"].to_numpy(dtype=np.float64)
         score = score + RECENCY_BONUS * recency(catalog["release_year"], this_year or this_year_kst()) * popularity
+    if "korean" in catalog:
+        score = score + KOREAN_BONUS * catalog["korean"].to_numpy(dtype=np.float64)
 
     # Once anyone has given feedback the veto binds both viewers; in cold mode only known tastes veto.
     veto = np.zeros(n, dtype=bool)

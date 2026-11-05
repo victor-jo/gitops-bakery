@@ -41,7 +41,7 @@ _NEW = """query($country: Country!, $first: Int!, $after: String, $date: Date!, 
 _SEARCH = """query($country: Country!, $first: Int!, $q: String!) {
   popularTitles(country: $country, first: $first, filter: {searchQuery: $q, objectTypes: [MOVIE]}) {
     edges { node { ... on Movie { content(country: $country, language: "ko") {
-      title originalReleaseYear externalIds { tmdbId } } } } } } }"""
+      title originalTitle originalReleaseYear externalIds { tmdbId } } } } } } }"""
 
 
 def http_post(query: str, variables: dict) -> dict:
@@ -153,7 +153,7 @@ def _norm(title: str) -> str:
 
 
 def search_title(title: str, year: int | None, post: Post) -> dict | None:
-    """Look a title up by name; on an exact normalized match within one year return its tmdb id and release year."""
+    """Look a title up by name; on an exact normalized match within one year return its tmdb id, year and original title."""
     conn = post(_SEARCH, {"country": COUNTRY, "first": 10, "q": title})["data"]["popularTitles"]
     want = _norm(title)
     for e in conn["edges"]:
@@ -165,7 +165,7 @@ def search_title(title: str, year: int | None, post: Post) -> dict | None:
             continue
         tmdb = (c["externalIds"] or {}).get("tmdbId")
         if tmdb:
-            return {"tmdb_id": tmdb, "release_year": y}
+            return {"tmdb_id": tmdb, "release_year": y, "original_title": c.get("originalTitle")}
     return None
 
 

@@ -197,3 +197,11 @@ def test_each_service_keeps_two_places_when_it_has_acceptable_movies():
     assert "c1" in keys and "cbad" not in keys  # a vetoed movie never takes a reserved place
     low = [min(r["p_me"], r["p_wife"]) for r in out]
     assert low == sorted(low, reverse=True)  # reserved places still appear in score order
+
+
+def test_korean_bonus_moves_korean_movies_up_without_weakening_the_veto():
+    cat = _cat([("foreign", 0.80, 0.80), ("korean", 0.74, 0.74), ("korean_bad", 0.90, 0.30)])
+    cat["korean"] = [False, True, True]
+    out = recommend(cat, 0.0, TASTE, _warm())
+    assert [r["movie_key"] for r in out if not r["gamble"]] == ["korean", "foreign"]
+    assert all(r["gamble"] for r in out if r["movie_key"] == "korean_bad")

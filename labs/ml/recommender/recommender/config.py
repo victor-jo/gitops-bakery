@@ -11,6 +11,8 @@ LIKE_RATING = 4.0
 # The veto ignores it.
 RECENCY_YEARS = 5
 RECENCY_BONUS = 0.33
+# Korean films (Hangul original title) get this added to their ranking score; the veto ignores it too
+KOREAN_BONUS = 0.1
 
 VIEWERS: dict[str, str] = {"me": "나", "wife": "아내"}
 SERVICES: dict[str, str] = {"nfx": "Netflix", "dnp": "Disney+", "cou": "Coupang Play"}

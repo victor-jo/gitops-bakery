@@ -73,10 +73,11 @@ def test_new_titles_sends_new_page_type_and_stamps_day():
     assert df.iloc[0].tolist() == ["x", "7", "nfx", date(2026, 11, 5)]
 
 
-def _search_post(title, year, tmdb="496243"):
+def _search_post(title, year, tmdb="496243", original="기생충"):
     def post(query, variables):
         return {"data": {"popularTitles": {"edges": [{"node": {"content": {
-            "title": title, "originalReleaseYear": year, "externalIds": {"tmdbId": tmdb}}}}]}}}
+            "title": title, "originalTitle": original, "originalReleaseYear": year,
+            "externalIds": {"tmdbId": tmdb}}}}]}}}
     return post
 
 
@@ -115,5 +116,6 @@ def test_new_titles_queries_each_package_and_stamps_service(monkeypatch):
 
 
 def test_search_title_returns_the_release_year_with_the_tmdb_id():
-    assert search_title("기생충", None, _search_post("기생충", 2019)) == {"tmdb_id": "496243", "release_year": 2019}
+    assert search_title("기생충", None, _search_post("기생충", 2019)) == {
+        "tmdb_id": "496243", "release_year": 2019, "original_title": "기생충"}
     assert search_title("기생충", 2019, _search_post("기생충", 2015)) is None

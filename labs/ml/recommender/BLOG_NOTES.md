@@ -80,3 +80,10 @@ After trying it, the owner wanted recent releases to come up more. Two changes:
 Checked first: Korean popularity was already even between services (2026 releases average 0.60 on Netflix, 0.59 on Disney+; 토이 스토리 5 is 0.997). Disney+ family titles were missing from the picks because the marks so far lean to action/crime, and Coupang had only 144 movies (the full crawl is still running) with a release year for 22 of them.
 - Each service now keeps `MIN_PER_SERVICE = 2` places among the ten picks, filled only with movies that pass the veto, and the list is still shown in score order.
 - Coupang titles take their release year from the JustWatch/TMDB match (the match cache now stores `{tmdb_id, release_year}`; entries cached before this are searched once more), so recent Coupang movies get the recency bonus too.
+
+## 2026-11-05 — Korean films first
+
+- A movie is Korean when its original title is written in Hangul (JustWatch `originalTitle`; for Coupang titles, the original title of their JustWatch match, now kept in the match cache).
+- Picks: `KOREAN_BONUS = 0.1` added to the ranking score (the veto still uses raw probabilities).
+- "Mark what you've seen": within the same release year, Korean films come first.
+- Unmatched Coupang titles have no original title, so they are never flagged Korean even when they are.

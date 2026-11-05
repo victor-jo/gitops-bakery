@@ -158,3 +158,14 @@ def test_s3_client_reads_env(monkeypatch):
     monkeypatch.setattr(s3.boto3, "client", lambda *a, **kw: seen.update(kw) or object())
     s3.client()
     assert seen["endpoint_url"] == "http://host:3900" and seen["region_name"] == "garage"
+
+
+def test_korean_movies_are_flagged_by_a_hangul_original_title():
+    jw = _jw([["j1", "100", "기생충", 2019, ["drama"], "", None, "nfx", 1],
+              ["j2", "200", "인셉션", 2010, ["scifi"], "", None, "nfx", 2]])
+    jw["original_title"] = ["기생충", "Inception"]
+    cp = _cp([["c1", "movie", "화녀", float("nan"), ["drama"], "", [], None, 5, None, "300"],
+              ["c2", "movie", "모름", float("nan"), ["drama"], "", [], None, 5, None, None]])
+    cp["original_title"] = ["화녀", None]
+    out = build_catalog(jw, cp, NEW, LINKS, TODAY).set_index("movie_key")
+    assert out.korean.to_dict() == {"tmdb:100": True, "tmdb:200": False, "tmdb:300": True, "cp:c2": False}

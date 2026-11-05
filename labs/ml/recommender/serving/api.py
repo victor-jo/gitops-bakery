@@ -60,10 +60,12 @@ class _Catalog:
         self.genres = [list(g) for g in df["genres"]]
         self.popularity = df["popularity_kr"].to_numpy(dtype=np.float64)
         self.row = {k: i for i, k in enumerate(df["movie_key"])}
-        # Onboarding order: newest release year first, then the more popular; unknown years last
+        # Onboarding order: newest release year first, Korean films first within a year, then the more
+        # popular; unknown years last
         years = (pd.array(df["release_year"], dtype="Int64").to_numpy(dtype="float64", na_value=-np.inf)
                  if "release_year" in df else np.zeros(len(df)))
-        self.onboarding_order = np.lexsort((-self.popularity, -years))
+        korean = df["korean"].to_numpy(dtype=np.float64) if "korean" in df else np.zeros(len(df))
+        self.onboarding_order = np.lexsort((-self.popularity, -korean, -years))
 
 
 class _Couple:
