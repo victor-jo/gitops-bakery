@@ -70,5 +70,6 @@
 ## 2026-11-05 — newer movies first (after the first real use)
 
 After trying it, the owner wanted recent releases to come up more. Two changes:
-- Weekend picks: the ranking score gets `RECENCY_BONUS = 0.15` for a movie released this year, fading linearly to 0 at 5 years old (`RECENCY_YEARS`). The veto still uses the raw probabilities, so a recent movie one of them is predicted to dislike is not let through.
+- Weekend picks: the ranking score gets `RECENCY_BONUS = 0.3` for a movie released this year, fading linearly to 0 at 5 years old (`RECENCY_YEARS`). The veto still uses the raw probabilities, so a recent movie one of them is predicted to dislike is not let through.
 - "Mark what you've seen" grid: newest release year first, then the more popular one; movies with no known year go last.
+- Tuned on the owner's 17 real marks: at 0.15 all ten picks were still 1972–2010 classics; at 0.3 the list mixes about half 2026 releases with the top classics; at 0.5 every pick is a 2026 release. Set to 0.3. Why the bonus has to be this large: post-2019 movies have no MovieLens ratings and their Ridge-placed vectors sit near the average, so their best lower score is about 0.56 against 0.86 for the best classic.
