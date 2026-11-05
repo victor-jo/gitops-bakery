@@ -13,6 +13,11 @@ RECENCY_YEARS = 5
 RECENCY_BONUS = 0.33
 # Korean films (Hangul original title) get this added to their ranking score; the veto ignores it too
 KOREAN_BONUS = 0.2
+# Within a year, a movie's review rating (0..1) above or below the catalog mean adds or takes RATING_BONUS ×
+# the difference; an unrated movie gets nothing. Live, min(p) among picks has an IQR of 0.035 and the review
+# rating about 0.09, so 0.5 lets reviews move the order about as much as taste does, and less than KOREAN_BONUS.
+# The veto ignores it.
+RATING_BONUS = 0.5
 
 VIEWERS: dict[str, str] = {"me": "나", "wife": "아내"}
 SERVICES: dict[str, str] = {"nfx": "Netflix", "dnp": "Disney+", "cou": "Coupang Play"}

@@ -221,3 +221,15 @@ def test_a_like_filter_orders_by_similarity_then_year_and_keeps_the_exclusions()
     assert out[0]["similarity"] == pytest.approx(0.9)
     page = recommend(cat, 0.0, TASTE, c, this_year=2026, similarity=sim, offset=1, limit=5)
     assert [r["movie_key"] for r in page] == ["tie_new", "tie_old"]
+
+
+def test_review_rating_reorders_within_a_year_only_and_leaves_unrated_movies_neutral():
+    cat = _cat([("plain", 0.80, 0.80), ("loved", 0.78, 0.78), ("unrated", 0.79, 0.79), ("old_loved", 0.9, 0.9),
+                ("bad_loved", 0.9, 0.3)])
+    cat["release_year"] = pd.array([2026, 2026, 2026, 2010, 2026], dtype="Int64")
+    cat["review_rating"] = [0.5, 0.9, None, 1.0, 1.0]
+    out = recommend(cat, 0.0, TASTE, _warm(), this_year=2026)
+    picks = [r["movie_key"] for r in out if r["source"] == "pick"]
+    # loved jumps plain within 2026; unrated keeps its taste place between them; 2010 stays after 2026
+    assert picks == ["loved", "unrated", "plain", "old_loved"]
+    assert [r["movie_key"] for r in out if r["source"] == "popular"] == ["bad_loved"]  # the veto ignores reviews

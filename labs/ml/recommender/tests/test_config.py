@@ -6,6 +6,7 @@ def test_constants_match_spec():
     assert config.VETO_P == 0.35
     assert config.STRONG_DISLIKE_P == 0.20
     assert config.PAGE_SIZE == 20
+    assert config.RATING_BONUS == 0.5
     assert config.LIKE_RATING == 4.0
     assert config.VIEWERS == {"me": "나", "wife": "아내"}
     assert config.SERVICES == {"nfx": "Netflix", "dnp": "Disney+", "cou": "Coupang Play"}
