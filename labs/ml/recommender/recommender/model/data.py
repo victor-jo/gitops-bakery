@@ -1,10 +1,15 @@
 # Turns MovieLens ratings and the couple's feedback into dense-indexed binary training rows
+import hashlib
+
+import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
 from recommender.config import LIKE_RATING
 
-COUPLE_COLUMNS = ["viewer", "movielens_id", "liked"]
+COUPLE_COLUMNS = ["viewer", "movie_key", "movielens_id", "liked"]
+# Share of the couple's marks held out for the gate, chosen per mark by a stable hash
+COUPLE_HOLDOUT_PERCENT = 20
 
 
 def load_couple_feedback(events: list[dict], catalog: pd.DataFrame) -> pd.DataFrame:
@@ -12,6 +17,7 @@ def load_couple_feedback(events: list[dict], catalog: pd.DataFrame) -> pd.DataFr
     marks = [e for e in events if e.get("kind") == "mark"]
     if not marks:
         return pd.DataFrame({"viewer": pd.Series(dtype=object),
+                             "movie_key": pd.Series(dtype=object),
                              "movielens_id": pd.Series(dtype="Int64"),
                              "liked": pd.Series(dtype=bool)})
     df = pd.DataFrame(marks).sort_values("at", kind="stable")
@@ -20,7 +26,7 @@ def load_couple_feedback(events: list[dict], catalog: pd.DataFrame) -> pd.DataFr
     ids = ids.set_index("movie_key")["movielens_id"]
     df["movielens_id"] = df["movie_key"].map(ids)
     df = df.dropna(subset=["movielens_id"])
-    out = df[["viewer", "movielens_id", "liked"]].copy()
+    out = df[COUPLE_COLUMNS].copy()
     out["movielens_id"] = out["movielens_id"].astype("Int64")
     out["liked"] = out["liked"].astype(bool)
     return out.reset_index(drop=True)
@@ -42,14 +48,18 @@ def load_movielens(
     user_index = {"me": n, "wife": n + 1}
 
     if len(couple):
-        known = couple[couple["movielens_id"].astype("Int64").isin(list(item_index))]
-        extra = pd.DataFrame({
-            "user_idx": known["viewer"].map(user_index).astype("int32"),
-            "item_idx": known["movielens_id"].astype("int64").map(item_index).astype("int32"),
-            "label": known["liked"].astype("float32"),
-        })
-        rows = pd.concat([rows, extra], ignore_index=True)
+        rows = pd.concat([rows, couple_rows(couple, user_index, item_index)], ignore_index=True)
     return rows, user_index, item_index
+
+
+def couple_rows(couple: pd.DataFrame, user_index: dict[str, int], item_index: dict[int, int]) -> pd.DataFrame:
+    """The couple's marks as (user_idx, item_idx, label) rows; movies MovieLens does not know are dropped."""
+    known = couple[couple["movielens_id"].astype("Int64").isin(list(item_index))]
+    return pd.DataFrame({
+        "user_idx": known["viewer"].map(user_index).astype("int32"),
+        "item_idx": known["movielens_id"].astype("int64").map(item_index).astype("int32"),
+        "label": known["liked"].astype("float32"),
+    }).reset_index(drop=True)
 
 
 def split(df: pd.DataFrame, seed: int = 42) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -59,20 +69,26 @@ def split(df: pd.DataFrame, seed: int = 42) -> tuple[pd.DataFrame, pd.DataFrame,
     return train, val, test
 
 
-def split_couple(rows: pd.DataFrame, seed: int = 42) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """80/20 split of the couple's own rows into training rows and a holdout kept for evaluation."""
-    return train_test_split(rows, test_size=0.2, random_state=seed)
+def _held_out(viewer: str, movie_key: str) -> bool:
+    digest = hashlib.sha1(f"{viewer}|{movie_key}".encode()).digest()
+    return int.from_bytes(digest[:8], "big") % 100 < COUPLE_HOLDOUT_PERCENT
+
+
+def split_couple(couple: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split the couple's marks into training and holdout by a hash of viewer|movie_key.
+
+    A mark keeps its side across runs as new marks arrive, so a holdout mark never sits in an
+    earlier champion's training rows.
+    """
+    held = np.fromiter((_held_out(v, k) for v, k in zip(couple["viewer"], couple["movie_key"])),
+                       dtype=bool, count=len(couple))
+    return couple[~held].reset_index(drop=True), couple[held].reset_index(drop=True)
 
 
 def split_all(
     df: pd.DataFrame, user_index: dict[str, int], seed: int = 42
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Split MovieLens rows 75/15/10 and the couple's rows 80/20; the couple's train part joins train."""
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Split MovieLens rows 75/15/10; the couple's rows (already split by split_couple) all join train."""
     is_couple = df["user_idx"].isin(list(user_index.values())).to_numpy()
     train, val, test = split(df[~is_couple], seed)
-    couple = df[is_couple]
-    # train_test_split cannot split fewer than two rows; before any feedback there is no holdout
-    if len(couple) < 2:
-        return pd.concat([train, couple], ignore_index=True), val, test, couple.iloc[:0]
-    couple_train, couple_holdout = split_couple(couple, seed)
-    return pd.concat([train, couple_train], ignore_index=True), val, test, couple_holdout
+    return pd.concat([train, df[is_couple]], ignore_index=True), val, test

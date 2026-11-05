@@ -191,9 +191,13 @@ def train(epochs: int, sample_users: int, dim: int, holdout_path: str) -> str:
     user_ids = np.sort(ratings["userId"].unique())
     catalog = s3.read_parquet(CATALOG)
     couple = data.load_couple_feedback(_events(), catalog)
-    rows, user_index, item_index = data.load_movielens(ratings, couple)
+    couple_train, couple_holdout = data.split_couple(couple)
+    rows, user_index, item_index = data.load_movielens(ratings, couple_train)
     del ratings
-    train_rows, val, test, holdout = data.split_all(rows, user_index)
+    train_rows, val, test = data.split_all(rows, user_index)
+    holdout = data.couple_rows(couple_holdout, user_index, item_index)
+    # The gate folds each viewer in from these rows, as serving does, before scoring the holdout
+    folded = data.couple_rows(couple_train, user_index, item_index)
     n_users, n_items = max(user_index.values()) + 1, len(item_index)
     print(f"train: {len(train_rows)} rows, {n_users} users, {n_items} items, couple rows {len(couple)}")
 
@@ -202,8 +206,8 @@ def train(epochs: int, sample_users: int, dim: int, holdout_path: str) -> str:
     content = fit_content_model(catalog, arrays["item_vecs"], arrays["item_bias"], item_index)
     train_s = time.time() - started
 
-    pd.concat([val.assign(split="val"), test.assign(split="test"), holdout.assign(split="couple")],
-              ignore_index=True).to_parquet(holdout_path, index=False)
+    pd.concat([val.assign(split="val"), test.assign(split="test"), holdout.assign(split="couple"),
+               folded.assign(split="couple_train")], ignore_index=True).to_parquet(holdout_path, index=False)
 
     mlflow.set_experiment(MODEL_NAME)
     with mlflow.start_run() as run, tempfile.TemporaryDirectory() as tmp:
@@ -227,6 +231,27 @@ def _scores_by_user(df: pd.DataFrame, p: np.ndarray) -> dict[int, list[tuple[flo
     return out
 
 
+def _couple_probs(arrays: dict, couple: pd.DataFrame, folded: pd.DataFrame) -> np.ndarray:
+    """Like-probabilities of the couple holdout, each viewer folded in from their couple-train rows.
+
+    Serving never uses the trained couple user vectors; it folds a taste from the marks against
+    the item vectors, so the gate scores the couple the same way.
+    """
+    from recommender.core.foldin import fold_in
+
+    item_vecs, item_bias = arrays["item_vecs"], arrays["item_bias"]
+    global_bias = float(arrays["global_bias"])
+    prior = np.zeros(item_vecs.shape[1], np.float32)
+    out = np.empty(len(couple))
+    for user, idx in couple.groupby("user_idx").indices.items():
+        own = folded[folded["user_idx"] == user]
+        items = own["item_idx"].to_numpy()
+        taste = fold_in(item_vecs[items], item_bias[items], global_bias, own["label"].to_numpy(), prior)
+        held = couple["item_idx"].to_numpy()[idx]
+        out[idx] = item_vecs[held] @ taste + item_bias[held] + global_bias
+    return 1 / (1 + np.exp(-out))
+
+
 def _metrics(arrays: dict, holdout: pd.DataFrame) -> tuple[dict[str, float], int]:
     from recommender.model.evaluate import auc, precision_recall_at_k
     from recommender.model.gate import COUPLE_MIN_HOLDOUT
@@ -237,11 +262,12 @@ def _metrics(arrays: dict, holdout: pd.DataFrame) -> tuple[dict[str, float], int
                  + arrays["item_bias"][i] + float(arrays["global_bias"]))
         return 1 / (1 + np.exp(-logit))
 
-    val, test, couple = (holdout[holdout["split"] == s] for s in ("val", "test", "couple"))
+    val, test, couple, folded = (holdout[holdout["split"] == s]
+                                 for s in ("val", "test", "couple", "couple_train"))
     precision, recall = precision_recall_at_k(_scores_by_user(test, prob(test)), k=TOP_K)
     metrics = {"val_auc": auc(val["label"], prob(val)), "precision_10": precision, "recall_10": recall}
     if len(couple) >= COUPLE_MIN_HOLDOUT and couple["label"].nunique() == 2:
-        metrics["couple_auc"] = auc(couple["label"], prob(couple))
+        metrics["couple_auc"] = auc(couple["label"], _couple_probs(arrays, couple, folded))
     # A one-class couple holdout has no AUC, so the gate must not apply its couple rule
     return metrics, len(couple) if "couple_auc" in metrics else 0
 
@@ -278,7 +304,8 @@ def compare_on_same_rows(new: dict, champion: dict, holdout: pd.DataFrame
                          item_idx=items[known].astype(np.int64).to_numpy())
     new_metrics, couple_size = _metrics(new, rows)
     champ_metrics, _ = _metrics(champion, mapped)
-    return new_metrics, champ_metrics, couple_size, len(rows)
+    # couple_train rows only feed the fold-in; they are not scored
+    return new_metrics, champ_metrics, couple_size, int((rows["split"] != "couple_train").sum())
 
 
 def _load_arrays(path: str) -> dict:

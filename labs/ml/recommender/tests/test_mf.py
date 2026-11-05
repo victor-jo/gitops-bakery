@@ -2,15 +2,18 @@
 import numpy as np
 import pandas as pd
 
-from recommender.model.data import load_couple_feedback, load_movielens, split, split_all, split_couple
+from recommender.model.data import (
+    COUPLE_COLUMNS, couple_rows, load_couple_feedback, load_movielens, split, split_all, split_couple,
+)
 from recommender.model.evaluate import auc
 from recommender.model.mf import export, predict, train
 
-COUPLE_COLS = ["viewer", "movielens_id", "liked"]
+COUPLE_COLS = ["viewer", "movie_key", "movielens_id", "liked"]
 
 
 def _couple(rows):
-    return pd.DataFrame(rows, columns=COUPLE_COLS)
+    """rows: (viewer, movielens_id, liked); the movie key is derived from the id."""
+    return pd.DataFrame([(v, f"m{m}", m, liked) for v, m, liked in rows], columns=COUPLE_COLS)
 
 
 def test_load_movielens_labels_and_dense_indices():
@@ -52,6 +55,7 @@ def test_load_couple_feedback_latest_mark_wins_and_unmapped_dropped():
     ]
     out = load_couple_feedback(events, catalog)
     assert list(out.columns) == COUPLE_COLS
+    assert COUPLE_COLUMNS == COUPLE_COLS
     got = {(r.viewer, int(r.movielens_id)): bool(r.liked) for r in out.itertuples()}
     assert got == {("me", 10): False, ("wife", 20): True}
 
@@ -61,14 +65,38 @@ def test_load_couple_feedback_empty():
     assert out.empty and list(out.columns) == COUPLE_COLS
 
 
-def test_split_proportions_and_couple_split():
+def test_split_proportions():
     df = pd.DataFrame({"user_idx": range(1000), "item_idx": 0, "label": 1.0})
     train_df, val, test = split(df)
     assert (len(train_df), len(val), len(test)) == (750, 150, 100)
     assert split(df)[0].equals(train_df)  # deterministic
-    couple = pd.DataFrame({"user_idx": [1] * 10, "item_idx": range(10), "label": 1.0})
-    ctrain, holdout = split_couple(couple)
-    assert (len(ctrain), len(holdout)) == (8, 2)
+
+
+def _marks(n, viewers=("me", "wife")):
+    return pd.DataFrame([(viewers[k % 2], f"key{k}", k, k % 3 == 0) for k in range(n)], columns=COUPLE_COLS)
+
+
+def test_couple_split_is_a_stable_hash_of_viewer_and_movie():
+    ctrain, holdout = split_couple(_marks(1000))
+    assert 150 <= len(holdout) <= 250 and len(ctrain) + len(holdout) == 1000
+    again_train, again_holdout = split_couple(_marks(1000))
+    assert again_holdout.equals(holdout) and again_train.equals(ctrain)
+    # The side depends on the mark, not on its position or on the other marks
+    shuffled = _marks(1000).sample(frac=1, random_state=1)
+    assert set(split_couple(shuffled)[1]["movie_key"]) == set(holdout["movie_key"])
+
+
+def test_old_couple_marks_never_change_side_as_marks_are_added():
+    old_train, old_holdout = split_couple(_marks(300))
+    new_train, new_holdout = split_couple(_marks(1000))
+    old_keys = set(_marks(300)["movie_key"])
+    assert set(new_holdout["movie_key"]) & old_keys == set(old_holdout["movie_key"])
+    assert set(new_train["movie_key"]) & old_keys == set(old_train["movie_key"])
+
+
+def test_couple_split_of_no_marks_is_empty():
+    ctrain, holdout = split_couple(_marks(0))
+    assert ctrain.empty and holdout.empty
 
 
 def test_train_learns_block_structure_and_export_shapes():
@@ -105,11 +133,17 @@ def test_split_all_keeps_couple_rows_out_of_val_and_test():
     couple = pd.DataFrame({"user_idx": np.int32(50), "item_idx": np.arange(10, dtype=np.int32),
                            "label": np.float32(1)})
     df = pd.concat([ml, couple], ignore_index=True)
-    train_df, val, test, holdout = split_all(df, {"me": 50, "wife": 51})
-    assert (len(val), len(test), len(holdout)) == (150, 100, 2)
-    assert len(train_df) == 750 + 8
+    train_df, val, test = split_all(df, {"me": 50, "wife": 51})
+    assert (len(val), len(test)) == (150, 100)
+    assert len(train_df) == 750 + 10
     assert not (val.user_idx == 50).any() and not (test.user_idx == 50).any()
-    assert (train_df.user_idx == 50).sum() == 8 and train_df.user_idx.dtype == np.int32
+    assert (train_df.user_idx == 50).sum() == 10 and train_df.user_idx.dtype == np.int32
+
+
+def test_couple_rows_map_viewers_and_drop_unknown_movies():
+    out = couple_rows(_couple([["me", 10, True], ["wife", 20, False], ["me", 555, True]]),
+                      {"me": 7, "wife": 8}, {10: 0, 20: 1})
+    assert list(zip(out.user_idx, out.item_idx, out.label)) == [(7, 0, 1.0), (8, 1, 0.0)]
 
 
 def test_predict_batches(monkeypatch):
@@ -122,11 +156,8 @@ def test_predict_batches(monkeypatch):
     assert np.allclose(predict(model, u, i), full)
 
 
-def test_split_all_without_couple_rows_gives_an_empty_holdout():
+def test_split_all_without_couple_rows():
     ml = pd.DataFrame({"user_idx": np.arange(100, dtype=np.int32) % 10, "item_idx": np.int32(0),
                        "label": np.float32(1)})
-    train_df, val, test, holdout = split_all(ml, {"me": 10, "wife": 11})
-    assert (len(train_df), len(val), len(test), len(holdout)) == (75, 15, 10, 0)
-    _, _, _, holdout = split_all(pd.concat([ml, ml.iloc[:1].assign(user_idx=np.int32(10))]),
-                                 {"me": 10, "wife": 11})
-    assert len(holdout) == 0
+    train_df, val, test = split_all(ml, {"me": 10, "wife": 11})
+    assert (len(train_df), len(val), len(test)) == (75, 15, 10)

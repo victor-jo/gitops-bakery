@@ -51,15 +51,38 @@ def test_comparison_drops_rows_for_items_the_champion_never_saw():
     assert n_rows == 6
 
 
+def _couple_holdout():
+    # Users 1 and 2 are me and wife: both like movie 100 (item 0) and dislike movie 200 (item 1)
+    held = [(1 + k % 2, k // 2 % 2, float(k // 2 % 2 == 0), "couple") for k in range(12)]
+    folded = [(u, i, float(i == 0), "couple_train") for u in (1, 2) for i in (0, 1, 0, 1)]
+    return pd.DataFrame(held + folded, columns=["user_idx", "item_idx", "label", "split"])
+
+
 def test_couple_rows_map_by_viewer_name():
     new = _arrays([10], [100, 200], [[1.0]] * 3, [[1.0], [-1.0]])
     champion = _arrays([10], [200, 100], [[1.0]] * 3, [[-1.0], [1.0]])
-    couple = pd.DataFrame([(1 + k % 2, k % 2, float(k % 2 == 0), "couple") for k in range(12)],
-                          columns=["user_idx", "item_idx", "label", "split"])
-    holdout = pd.concat([_holdout().query("user_idx == 0"), couple], ignore_index=True)
+    holdout = pd.concat([_holdout().query("user_idx == 0"), _couple_holdout()], ignore_index=True)
     new_m, champ_m, couple_size, n_rows = steps.compare_on_same_rows(new, champion, holdout)
+    # The 8 couple_train rows only feed the fold-in, so they are neither scored nor counted
     assert n_rows == 16 and couple_size == 12
     assert new_m["couple_auc"] == champ_m["couple_auc"] == 1.0
+
+
+def test_couple_auc_folds_each_viewer_in_instead_of_using_trained_user_vectors():
+    # The trained me/wife vectors point the wrong way; the item vectors are informative
+    arrays = _arrays([10], [100, 200], [[1.0], [-5.0], [-5.0]], [[1.0], [-1.0]])
+    metrics, couple_size = steps._metrics(arrays, pd.concat([_holdout().query("user_idx == 0"),
+                                                             _couple_holdout()], ignore_index=True))
+    assert couple_size == 12 and metrics["couple_auc"] == 1.0
+
+
+def test_couple_auc_without_couple_train_rows_scores_with_the_zero_prior():
+    arrays = _arrays([10], [100, 200], [[1.0], [-5.0], [-5.0]], [[1.0], [-1.0]])
+    arrays["item_bias"] = np.array([1.0, -1.0], np.float32)
+    rows = _couple_holdout().query("split == 'couple'")
+    metrics, _ = steps._metrics(arrays, pd.concat([_holdout().query("user_idx == 0"), rows], ignore_index=True))
+    # With no marks to fold in, the taste is the zero prior and the item bias alone ranks
+    assert metrics["couple_auc"] == 1.0
 
 
 def _catalog(counts):
