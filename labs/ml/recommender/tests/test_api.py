@@ -118,7 +118,7 @@ def test_mark_changes_the_next_recommendations():
     assert after.index("a2") < before.index("a2")
     rec = c.get("/api/recommendations").json()[0]
     assert set(rec) == {"movie_key", "title", "poster_url", "services", "new_this_week",
-                        "p_me", "p_wife", "source", "reason"}
+                        "p_me", "p_wife", "source", "similarity", "reason"}
 
 
 def test_mark_appends_an_event_and_pushes_only_that_viewers_new_taste():
@@ -254,6 +254,39 @@ def test_recommendations_page_through_the_picks_then_the_popular_fallback():
     # The marked, the watched and the strongly disliked never appear, as picks or as popular movies
     assert {r["movie_key"] for p in pages for r in p}.isdisjoint({"e", "a2", "b"})
     assert c.get("/api/recommendations", params={"limit": 0}).status_code == 422
+
+
+def _like(c, viewer, key, minute=None):
+    c.post("/api/mark", json={"viewer": viewer, "movie_key": key, "liked": True, "source": "onboarding"})
+
+
+def test_liked_lists_the_viewers_current_likes_most_recent_first():
+    events = [Event("mark", "me", "a", True, None, _at(1)), Event("mark", "me", "b", True, None, _at(2)),
+              Event("mark", "me", "c", True, None, _at(3)), Event("mark", "me", "c", False, None, _at(4)),
+              Event("mark", "me", "a", True, None, _at(5)), Event("mark", "wife", "d", True, None, _at(6))]
+    c = _client(MemStore(events=events))
+    out = c.get("/api/viewer/me/liked").json()
+    assert out == [{"movie_key": "a", "title": "Ta"}, {"movie_key": "b", "title": "Tb"}]  # c was unliked later
+    assert _keys(c.get("/api/viewer/wife/liked")) == ["d"]
+    assert c.get("/api/viewer/kid/liked").status_code == 404
+
+
+def test_a_like_filter_lists_similar_picks_only_and_is_validated():
+    c = _client(MemStore())
+    _like(c, "me", "a")
+    c.post("/api/watched", json={"movie_key": "f"})
+    out = c.get("/api/recommendations", params={"viewer": "me", "like": "a"}).json()
+    assert out and all(r["source"] == "similar" for r in out)
+    sims = [r["similarity"] for r in out]
+    assert sims == sorted(sims, reverse=True) and min(sims) >= 0.3
+    assert {"a", "f"}.isdisjoint(r["movie_key"] for r in out)  # the liked movie itself and the watched one
+    assert "e" not in [r["movie_key"] for r in out]  # comedy, while a is drama: below the minimum
+    page = c.get("/api/recommendations", params={"viewer": "me", "like": "a", "offset": 1, "limit": 2}).json()
+    assert page == out[1:3]
+    assert c.get("/api/recommendations").json()[0]["similarity"] is None
+    for params, code in [({"like": "a"}, 422), ({"viewer": "wife", "like": "a"}, 422),
+                         ({"viewer": "me", "like": "b"}, 422), ({"viewer": "kid", "like": "a"}, 404)]:
+        assert c.get("/api/recommendations", params=params).status_code == code, params
 
 
 class BrokenReadStore(MemStore):

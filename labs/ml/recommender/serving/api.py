@@ -1,4 +1,4 @@
-# FastAPI app of the recommender: genres, onboarding posters, marks, watched and weekend picks
+# FastAPI app of the recommender: genres, onboarding posters, marks, watched, liked movies and weekend picks
 from __future__ import annotations
 
 import logging
@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from recommender.config import PAGE_SIZE, SERVICES, VIEWERS
 from recommender.core.foldin import fold_in, genre_prior
 from recommender.core.rank import recommend
+from recommender.core.similar import content_matrix, similarity_to
 from recommender.core.state import CoupleState, Event, replay
 from recommender.genres import CANONICAL, KOREAN_LABEL
 
@@ -50,7 +51,7 @@ class WatchedBody(BaseModel):
 
 
 class _Catalog:
-    """Arrays derived once per catalog load, shared by fold-in and onboarding."""
+    """Arrays derived once per catalog load, shared by fold-in, onboarding and the liked-movie filter."""
 
     def __init__(self, df: pd.DataFrame, global_bias: float):
         self.df = df
@@ -66,6 +67,7 @@ class _Catalog:
                  if "release_year" in df else np.zeros(len(df)))
         korean = df["korean"].to_numpy(dtype=np.float64) if "korean" in df else np.zeros(len(df))
         self.onboarding_order = np.lexsort((-self.popularity, -korean, -years))
+        self.content = content_matrix(df) if len(df) else None
 
 
 class _Couple:
@@ -228,12 +230,37 @@ def create_app(store: Store) -> FastAPI:
             couple.apply(Event("watched", None, body.movie_key, None, None, _now()))
         return {"ok": True}
 
+    @app.get("/api/viewer/{viewer}/liked")
+    def liked(viewer: str) -> list[dict]:
+        """The movies this viewer currently likes, most recently liked first, for the filter tabs."""
+        vid = _viewer(viewer)
+        with couple.session():
+            cat = couple.current()
+            likes, events = couple.state.viewers[vid].liked, list(couple.log)
+        last: dict[str, datetime] = {}
+        for e in events:
+            if e.kind == "mark" and e.viewer == vid and e.liked and e.movie_key in likes and e.movie_key in cat.row:
+                last[e.movie_key] = max(e.at, last.get(e.movie_key, e.at))
+        df = cat.df
+        return [{"movie_key": k, "title": df.iloc[cat.row[k]]["title"]}
+                for k in sorted(last, key=lambda k: last[k], reverse=True)]
+
     @app.get("/api/recommendations")
-    def recommendations(offset: int = Query(0, ge=0), limit: int = Query(PAGE_SIZE, ge=1, le=100)) -> list[dict]:
+    def recommendations(offset: int = Query(0, ge=0), limit: int = Query(PAGE_SIZE, ge=1, le=100),
+                        viewer: str | None = None, like: str | None = None) -> list[dict]:
         # Refold on a catalog change and push before reading, so the store serves the vectors just folded
         with couple.session():
             cat, state = couple.current(), couple.state
-        return recommend(cat.df, cat.global_bias, couple.tastes(), state, offset=offset, limit=limit)
+        similarity = None
+        if like is not None:
+            if viewer is None:
+                raise HTTPException(422, "like needs the viewer who liked it")
+            vid = _viewer(viewer)
+            if like not in state.viewers[vid].liked or like not in cat.row:
+                raise HTTPException(422, f"{like} is not a movie {vid} liked")
+            similarity = similarity_to(cat.content, cat.row[like])
+        return recommend(cat.df, cat.global_bias, couple.tastes(), state, offset=offset, limit=limit,
+                         similarity=similarity)
 
     app.mount("/", StaticFiles(directory=WEB, html=True), name="web")
     return app

@@ -3,6 +3,8 @@ VETO_P = 0.35
 STRONG_DISLIKE_P = 0.20
 # Movies per page of /api/recommendations when the caller does not ask for a size
 PAGE_SIZE = 20
+# A movie needs at least this content similarity to a liked movie to appear under that movie's tab
+SIMILAR_MIN = 0.3
 LIKE_RATING = 4.0
 # Newer releases rank higher: a movie from this year gets RECENCY_BONUS × its Korean popularity (0..1)
 # added to its ranking score, fading linearly to nothing for movies RECENCY_YEARS or more years old.

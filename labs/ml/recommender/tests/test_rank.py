@@ -204,3 +204,20 @@ def test_korean_bonus_moves_korean_movies_up_without_weakening_the_veto():
     out = recommend(cat, 0.0, TASTE, _warm())
     assert [r["movie_key"] for r in out if r["source"] == "pick"] == ["korean", "foreign"]
     assert all(r["source"] == "popular" for r in out if r["movie_key"] == "korean_bad")
+
+
+def test_a_like_filter_orders_by_similarity_then_year_and_keeps_the_exclusions():
+    rows = [("hi", 0.9, 0.9), ("tie_old", 0.9, 0.9), ("tie_new", 0.9, 0.9), ("low", 0.9, 0.9),
+            ("vetoed", 0.9, 0.3), ("watched", 0.9, 0.9)]
+    cat = _cat(rows)
+    cat["release_year"] = pd.array([2001, 2002, 2020, 2026, 2026, 2026], dtype="Int64")
+    sim = np.array([0.9, 0.801, 0.799, 0.29, 0.95, 0.95])
+    c = _warm()
+    c.watched = {"watched"}
+    out = recommend(cat, 0.0, TASTE, c, this_year=2026, similarity=sim)
+    # 0.801 and 0.799 are both 80%, so the newer one goes first; 0.29 is below the minimum
+    assert [r["movie_key"] for r in out] == ["hi", "tie_new", "tie_old"]
+    assert [r["source"] for r in out] == ["similar"] * 3  # no popular fallback, so the vetoed one never shows
+    assert out[0]["similarity"] == pytest.approx(0.9)
+    page = recommend(cat, 0.0, TASTE, c, this_year=2026, similarity=sim, offset=1, limit=5)
+    assert [r["movie_key"] for r in page] == ["tie_new", "tie_old"]

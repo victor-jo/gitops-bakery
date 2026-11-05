@@ -6,8 +6,8 @@ import pandas as pd
 
 from datetime import datetime, timedelta, timezone
 
-from recommender.config import (KOREAN_BONUS, RECENCY_BONUS, RECENCY_YEARS, SERVICES, STRONG_DISLIKE_P, VETO_P,
-                                VIEWERS)
+from recommender.config import (KOREAN_BONUS, RECENCY_BONUS, RECENCY_YEARS, SERVICES, SIMILAR_MIN, STRONG_DISLIKE_P,
+                                VETO_P, VIEWERS)
 from recommender.core.state import CoupleState
 from recommender.genres import KOREAN_LABEL
 
@@ -54,12 +54,15 @@ def _sigmoid(x: np.ndarray) -> np.ndarray:
 def recommend(
     catalog: pd.DataFrame, global_bias: float, taste: dict[str, np.ndarray | None], couple: CoupleState,
     this_year: int | None = None, offset: int = 0, limit: int | None = None,
+    similarity: np.ndarray | None = None,
 ) -> list[dict]:
     """One page of the couple's list: the picks newest release year first, then the popular fallback.
 
     Picks pass the veto and are ordered by release year (unknown last), then by score within a year. After
     them come the movies the veto caught, most popular in Korea first, minus any that a viewer strongly
-    dislikes. Only the requested slice is turned into entries.
+    dislikes. With `similarity` (each movie's similarity to one liked movie) the list is instead the picks
+    at least SIMILAR_MIN similar, most similar first and newest first within the same whole percent, with
+    no popular fallback. Only the requested slice is turned into entries.
     """
     n = len(catalog)
     if n == 0:
@@ -112,6 +115,13 @@ def recommend(
             veto |= probs[vid] < VETO_P
     years = (pd.array(catalog["release_year"], dtype="Int64").to_numpy(dtype="float64", na_value=-np.inf)
              if "release_year" in catalog else np.full(n, -np.inf))
+    if similarity is not None:
+        rows = np.flatnonzero(eligible & ~veto & (similarity >= SIMILAR_MIN))
+        rows = rows[np.lexsort((-similarity[rows], -years[rows], -np.round(similarity[rows], 2)))]
+        end = None if limit is None else offset + limit
+        return [_entry(catalog, int(i), "similar", probs, unit, key_row, couple, genres[i], float(similarity[i]))
+                for i in rows[offset:end]]
+
     picks = np.flatnonzero(eligible & ~veto)
     picks = picks[np.lexsort((-score[picks], -years[picks]))]
 
@@ -139,7 +149,7 @@ def _nearest(unit: np.ndarray, row: int, liked_keys, key_row: dict) -> int | Non
     return rows[best] if cos[best] >= _REASON_MIN_COS else None
 
 
-def _entry(catalog, i, source, probs, unit, key_row, couple, cand_genres) -> dict:
+def _entry(catalog, i, source, probs, unit, key_row, couple, cand_genres, similarity=None) -> dict:
     row = catalog.iloc[i]
     p_me, p_wife = float(probs["me"][i]), float(probs["wife"][i])
     pv = {"me": p_me, "wife": p_wife}
@@ -170,5 +180,6 @@ def _entry(catalog, i, source, probs, unit, key_row, couple, cand_genres) -> dic
         "p_me": p_me,
         "p_wife": p_wife,
         "source": source,
+        "similarity": similarity,
         "reason": reason,
     }
