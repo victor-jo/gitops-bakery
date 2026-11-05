@@ -20,7 +20,7 @@ RANKED_LIMIT = 1900
 Post = Callable[[str, dict], dict]
 
 _CONTENT = """content(country: $country, language: "ko") {
-  title originalTitle originalReleaseYear runtime shortDescription
+  title originalTitle originalReleaseYear runtime shortDescription posterUrl
   genres { shortName } externalIds { imdbId tmdbId } scoring { tmdbScore } }"""
 
 _POPULAR = """query($country: Country!, $first: Int!, $after: String, $pkg: [String!]%s) {
@@ -83,6 +83,12 @@ def _pages(field: str, query: str, variables: dict, post: Post):
         after = conn["pageInfo"]["endCursor"]
 
 
+def _poster(path: str | None) -> str | None:
+    if not path:
+        return None
+    return "https://images.justwatch.com" + path.replace("{profile}", "s332").replace("{format}", "webp")
+
+
 def _row(node: dict, package: str) -> dict:
     c = node["content"]
     ids = c["externalIds"] or {}
@@ -91,7 +97,8 @@ def _row(node: dict, package: str) -> dict:
         "title": c["title"], "original_title": c["originalTitle"],
         "release_year": c["originalReleaseYear"], "runtime_min": c["runtime"],
         "genres": from_justwatch([g["shortName"] for g in c["genres"]]),
-        "description": c["shortDescription"] or "", "service": package,
+        "description": c["shortDescription"] or "", "poster_url": _poster(c.get("posterUrl")),
+        "service": package,
         "_tmdb_score": (c["scoring"] or {}).get("tmdbScore") or 0.0,
     }
 

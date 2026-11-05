@@ -4,10 +4,11 @@ from datetime import date
 from recommender.catalog.justwatch import fetch_service, new_titles, search_tmdb_id
 
 
-def _node(oid, title, year, tmdb, score=1.0, genres=("drm",)):
+def _node(oid, title, year, tmdb, score=1.0, genres=("drm",), poster=True):
     return {"objectId": oid, "content": {
         "title": title, "originalTitle": title + "-o", "originalReleaseYear": year,
-        "runtime": 100, "shortDescription": "d", "genres": [{"shortName": g} for g in genres],
+        "runtime": 100, "shortDescription": "d",
+        "posterUrl": "/poster/%s/{profile}/x.{format}" % oid if poster else None, "genres": [{"shortName": g} for g in genres],
         "externalIds": {"imdbId": "tt" + oid, "tmdbId": tmdb},
         "scoring": {"tmdbScore": score}}}
 
@@ -40,6 +41,20 @@ def test_fetch_service_unions_slices_and_ranks():
     assert set(df.service) == {"nfx"}
     assert df.genres.iloc[0] == ["drama"]
     assert df.tmdb_id.iloc[3] is None
+    assert df.poster_url.iloc[0] == "https://images.justwatch.com/poster/c/s332/x.webp"
+
+
+def test_fetch_service_poster_is_none_when_absent():
+    data = {None: [[_node("z", "Z", 2001, "9", poster=False)]]}
+
+    def post(query, variables):
+        pages = data.get((variables["min"], variables["max"]) if "min" in variables else None, [[]])
+        return {"data": {"popularTitles": {
+            "totalCount": 1, "pageInfo": {"hasNextPage": False, "endCursor": None},
+            "edges": [{"node": n} for n in pages[0]]}}}
+
+    df = fetch_service("nfx", post, years=[(2001, 2001)], pause=0)
+    assert df.poster_url.iloc[0] is None
 
 
 def test_new_titles_sends_new_page_type_and_stamps_day():
