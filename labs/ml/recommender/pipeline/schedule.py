@@ -17,9 +17,9 @@ def daily_cron_utc(hour: int, minute: int = 0) -> str:
     return f"0 {shifted % 60} {shifted // 60} * * *"
 
 
-# Daily 05:00 KST is 20:00 UTC; Monday 06:00 KST is Sunday 21:00 UTC; Monday 07:00 KST is Sunday 22:00 UTC
+# Daily 05:00 KST is 20:00 UTC; daily 06:00 KST is 21:00 UTC; Monday 07:00 KST is Sunday 22:00 UTC
 CATALOG_CRON = daily_cron_utc(hour=5)
-TRAINING_CRON = weekly_cron_utc(weekday=1, hour=6)
+TRAINING_CRON = daily_cron_utc(hour=6)
 MONITORING_CRON = weekly_cron_utc(weekday=1, hour=7)
 CRONS = {"movie-catalog": CATALOG_CRON, "movie-recommender-training": TRAINING_CRON, "movie-recommender-monitoring": MONITORING_CRON}
 

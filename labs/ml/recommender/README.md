@@ -52,7 +52,7 @@ serving/run.sh                                           # prints the phone URL
 
 `run.sh` reads the credentials from `kubeflow/kfp-s3` when it starts the container; they are never baked into the image. The container reaches the tunnels as `host.docker.internal`, and MLflow artifacts come through the MLflow server (`MLFLOW_ENABLE_PROXY_MULTIPART_DOWNLOAD=false`), because the presigned Garage URLs do not resolve outside the cluster.
 
-The container re-applies the Feast definitions at start-up, and reloads the catalog every 6 hours. The Feast registry's file-source endpoint is whatever the last process to apply wrote: `localhost:3900` after a Mac-side `feast_config.py --apply`, `host.docker.internal:3900` after the container starts. Each process applies before it materializes, so both work, but the registry shows only the last one. A rebuild is needed only when the code changes. The daily catalog run and the weekly training run both rewrite `features/movies.parquet`, so a new catalog or champion needs only a `docker restart movie-rec`, or a wait for the next reload.
+The container re-applies the Feast definitions at start-up, and reloads the catalog every 6 hours. The Feast registry's file-source endpoint is whatever the last process to apply wrote: `localhost:3900` after a Mac-side `feast_config.py --apply`, `host.docker.internal:3900` after the container starts. Each process applies before it materializes, so both work, but the registry shows only the last one. A rebuild is needed only when the code changes. The daily catalog and training runs both rewrite `features/movies.parquet`, so a new catalog or champion needs only a `docker restart movie-rec`, or a wait for the next reload.
 
 The container reaches Garage and Valkey through two Mac-side port-forwards. `serving/tunnels.sh` (run by `run.sh`) keeps each one in a `while true; do kubectl port-forward ...; sleep 2; done` loop, so a dropped forward comes back within seconds. Logs and pid files are `/tmp/movie-rec-tunnel-<port>.{log,pid}`, and a second call does not start a duplicate. If a port already listens (for example from `labs/ml/feast/pf.sh`), it is left alone and is not supervised.
 
@@ -70,11 +70,12 @@ for p in catalog training monitoring; do .venv-rec/bin/python pipeline/run.py $p
 | Recurring run | When (KST) | Cron in UTC |
 |---|---|---|
 | `movie-catalog` | every day 05:00 | `0 0 20 * * *` |
-| `movie-recommender-training` | Monday 06:00 | `0 0 21 * * 0` |
+| `movie-recommender-training` | every day 06:00 | `0 0 21 * * *` |
 | `movie-recommender-monitoring` | Monday 07:00 | `0 0 22 * * 0` |
 
 - Creating is idempotent: the new recurring run is created first, then every older one with the same name is deleted, so rerunning the command never leaves duplicates and a failed create keeps the old schedule.
 - All three use `max_concurrency=1` and `no_catchup`. That matters most for the catalog: the first Coupang pass takes hours, and a daily trigger must not start a second crawl while one is running. After the first pass only new URLs and 300 rechecks (about 5 minutes) are fetched, so the daily run is short.
+- Training runs daily right after the catalog run (about 4 to 4.5 minutes on 4 CPU / 8Gi). Hourly retraining would add little: MovieLens 25M dominates the training data, and new marks already reach the tastes in real time through fold-in.
 - Check them in the KFP UI (Recurring runs), or list them:
 
 ```bash

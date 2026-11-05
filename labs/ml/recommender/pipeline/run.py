@@ -21,7 +21,7 @@ parser.add_argument("pipeline", choices=["catalog", "training", "monitoring"])
 parser.add_argument("--max-pages", type=int, default=0, help="catalog: cap new Coupang pages (0 = all)")
 parser.add_argument("--epochs", type=int, default=5, help="training: MF epochs")
 parser.add_argument("--sample-users", type=int, default=0, help="training: MovieLens users to sample (0 = all)")
-parser.add_argument("--schedule", action="store_true", help="create (or replace) the recurring run instead of one run: catalog daily 05:00 KST, training Monday 06:00 KST, monitoring Monday 07:00 KST")
+parser.add_argument("--schedule", action="store_true", help="create (or replace) the recurring run instead of one run: catalog daily 05:00 KST, training daily 06:00 KST, monitoring Monday 07:00 KST")
 parser.add_argument("--no-wait", action="store_true", help="submit and exit without waiting for the run")
 args = parser.parse_args()
 
