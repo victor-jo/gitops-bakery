@@ -70,6 +70,8 @@ button.block { display: block; width: 100%; margin-bottom: 12px; font-size: 1.1r
 .who span { flex: 1; }
 .who button { flex: none; }
 .who button.picked { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.tabs { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 12px; padding-bottom: 4px; }
+.tabs .chip { flex: none; white-space: nowrap; }
 .divider { font-size: 1rem; color: var(--muted); margin: 20px 0 8px; padding-top: 12px; border-top: 1px solid var(--line); }
 .msg { text-align: center; padding: 32px 0; color: var(--muted); }
 .err { text-align: center; padding: 24px 0; }

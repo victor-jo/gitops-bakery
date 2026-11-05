@@ -228,8 +228,20 @@ function onboardScreen() {
 
 // ---- 4. weekend picks ----
 // Picks newest first, then the popular fallback under an '인기' divider, loaded page by page while scrolling.
-function picksScreen() {
+// A tab per movie the viewer liked narrows the list to movies similar to it.
+function picksScreen(like = null) {
   if (!viewer) { profileScreen(); return; }
+  const tabs = el("div", { class: "tabs", role: "tablist" });
+  const tab = (label, key) => el("button", {
+    class: "chip" + (key === like ? " on" : ""), type: "button", role: "tab", "aria-selected": String(key === like),
+    onclick: () => { if (key !== like) picksScreen(key); },
+  }, label);
+  tabs.append(tab("전체", null));
+  // The tabs are a shortcut; without the liked list the screen still works as [전체] alone
+  api("/api/viewer/" + viewer + "/liked").then((liked) => {
+    tabs.append(...liked.map((m) => tab(m.title, m.movie_key)));
+  }, () => {});
+  const filter = like ? "&viewer=" + viewer + "&like=" + encodeURIComponent(like) : "";
   const list = el("div", {});
   const status = el("div", {});
   const sentinel = el("div", { class: "sentinel" });
@@ -243,7 +255,7 @@ function picksScreen() {
     try {
       // A movie marked watched leaves the server's list, so the offset counts only the cards still in it
       const offset = list.querySelectorAll(".pick:not(.watched)").length;
-      const items = await api("/api/recommendations?offset=" + offset + "&limit=" + PICKS_PAGE);
+      const items = await api("/api/recommendations?offset=" + offset + "&limit=" + PICKS_PAGE + filter);
       const shown = new Set([...list.querySelectorAll(".pick")].map((c) => c.dataset.key));
       for (const m of items) {
         if (shown.has(m.movie_key)) continue;
@@ -253,7 +265,9 @@ function picksScreen() {
         list.append(pickCard(m));
       }
       exhausted = items.length < PICKS_PAGE;
-      if (exhausted && !list.querySelector(".pick")) {
+      if (exhausted && !list.querySelector(".pick") && like) {
+        status.replaceChildren(el("p", { class: "msg" }, "이 영화와 비슷한 영화가 없어요."));
+      } else if (exhausted && !list.querySelector(".pick")) {
         status.replaceChildren(
           el("p", { class: "msg" }, "아직 추천할 영화가 없어요. 장르를 고르고 본 영화를 표시해 보세요."),
           el("button", { class: "primary block", type: "button", onclick: () => genresScreen() }, "장르 고르기"));
@@ -269,7 +283,7 @@ function picksScreen() {
     if (!exhausted && observer === io) { io.unobserve(sentinel); io.observe(sentinel); }
   }
 
-  show(el("h1", {}, "이번 주말 후보"), list, status, sentinel);
+  show(el("h1", {}, "이번 주말 후보"), tabs, list, status, sentinel);
   const io = new IntersectionObserver((entries) => {
     if (entries.some((e) => e.isIntersecting)) more();
   }, { rootMargin: "400px" });
@@ -298,7 +312,8 @@ function pickCard(m) {
   actions.append(watched);
   card.append(
     poster(m),
-    el("div", { class: "info" }, el("h2", {}, m.title), badges, el("p", { class: "reason" }, m.reason)),
+    el("div", { class: "info" }, el("h2", {}, m.title), badges, el("p", { class: "reason" },
+      m.similarity == null ? m.reason : "닮음 " + Math.round(m.similarity * 100) + "%")),
     actions);
   return card;
 }
