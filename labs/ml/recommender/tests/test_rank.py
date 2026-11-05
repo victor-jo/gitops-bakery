@@ -175,3 +175,11 @@ def test_recency_fades_over_five_years_and_ignores_missing_years():
 
     years = pd.array([2026, 2025, 2021, 1990, None], dtype="Int64")
     assert recency(years, 2026).tolist() == pytest.approx([1.0, 0.8, 0.0, 0.0, 0.0])
+
+
+def test_recency_bonus_favours_recent_movies_people_actually_watch():
+    # Same predicted taste; the popular recent one gets the full bonus, the obscure one almost none
+    cat = _cat([("obscure", 0.70, 0.70, 0.05), ("old", 0.75, 0.75, 0.9), ("hit", 0.70, 0.70, 1.0)])
+    cat["release_year"] = pd.array([2026, 2000, 2026], dtype="Int64")
+    out = recommend(cat, 0.0, TASTE, _warm(), this_year=2026)
+    assert [r["movie_key"] for r in out] == ["hit", "old", "obscure"]

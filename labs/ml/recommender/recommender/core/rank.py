@@ -92,8 +92,10 @@ def recommend(
     cold = not any(vs.liked or vs.disliked or vs.genres for vs in couple.viewers.values())
     score = catalog["popularity_kr"].to_numpy(dtype=np.float64) if cold else low
     if "release_year" in catalog:
-        # Recent releases move up the list; the veto below still uses the raw probabilities
-        score = score + RECENCY_BONUS * recency(catalog["release_year"], this_year or this_year_kst())
+        # Recent releases move up the list, weighted by how much they are watched in Korea so that a
+        # recent hit outranks an obscure new title; the veto below still uses the raw probabilities
+        popularity = catalog["popularity_kr"].to_numpy(dtype=np.float64)
+        score = score + RECENCY_BONUS * recency(catalog["release_year"], this_year or this_year_kst()) * popularity
 
     # Once anyone has given feedback the veto binds both viewers; in cold mode only known tastes veto.
     veto = np.zeros(n, dtype=bool)
