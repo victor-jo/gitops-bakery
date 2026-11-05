@@ -376,10 +376,23 @@ def evaluate_and_gate(run_id: str, holdout_path: str) -> str:
     return reason
 
 
+def _has_champion() -> bool:
+    from mlflow import MlflowClient
+
+    models = MlflowClient().search_registered_models(filter_string=f"name='{MODEL_NAME}'")
+    return bool(models) and ALIAS in models[0].aliases
+
+
 def place_catalog() -> int:
-    """Give every catalog movie the champion's vector and bias and write the feature parquet."""
+    """Give every catalog movie the champion's vector and bias and write the feature parquet.
+
+    The catalog pipeline runs this daily as well, so a new catalog reaches the service without retraining.
+    """
     import mlflow
 
+    if not _has_champion():
+        print(f"features: no {MODEL_NAME}@{ALIAS} yet; skipping placement until the training pipeline promotes one")
+        return 0
     catalog = s3.read_parquet(CATALOG)
     with tempfile.TemporaryDirectory() as tmp:
         local = mlflow.artifacts.download_artifacts(f"models:/{MODEL_NAME}@{ALIAS}", dst_path=tmp)

@@ -128,6 +128,7 @@ def test_place_catalog_stamps_every_row_with_a_utc_event_time(tmp_path, monkeypa
         pickle.dump(_FakeContent(), f)
     fake = types.SimpleNamespace(artifacts=types.SimpleNamespace(download_artifacts=lambda *a, **k: str(tmp_path)))
     monkeypatch.setitem(sys.modules, "mlflow", fake)
+    monkeypatch.setattr(steps, "_has_champion", lambda: True)
     written = {}
     monkeypatch.setattr(steps.s3, "read_parquet", lambda key: pd.DataFrame({"movie_key": ["a", "b"]}))
     monkeypatch.setattr(steps.s3, "write_parquet", lambda df, key: written.update(df=df, key=key))
@@ -139,3 +140,10 @@ def test_place_catalog_stamps_every_row_with_a_utc_event_time(tmp_path, monkeypa
     stamp = written["df"]["event_timestamp"]
     assert str(stamp.dt.tz) == "UTC"
     assert stamp.nunique() == 1 and before <= stamp.iloc[0] <= after
+
+
+def test_place_catalog_skips_without_a_champion(monkeypatch, capsys):
+    monkeypatch.setattr(steps, "_has_champion", lambda: False)
+    monkeypatch.setattr(steps.s3, "write_parquet", lambda df, key: pytest.fail("must not write features"))
+    assert steps.place_catalog() == 0
+    assert "skipping placement" in capsys.readouterr().out

@@ -1,11 +1,11 @@
-# Daily movie catalog pipeline: JustWatch (Netflix, Disney+) -> Coupang Play pages -> tmdb matching and merge
+# Daily movie catalog pipeline: JustWatch (Netflix, Disney+) -> Coupang Play pages -> tmdb matching and merge -> champion features
 import sys
 from pathlib import Path
 
 from kfp import compiler, dsl
 
 sys.path[:0] = [str(Path(__file__).parent), str(Path(__file__).parent / "src")]
-from components import collect_coupang, collect_justwatch, match_and_build  # noqa: E402
+from components import collect_coupang, collect_justwatch, match_and_build, place_catalog  # noqa: E402
 from wiring import wire  # noqa: E402
 
 
@@ -19,7 +19,9 @@ def movie_catalog(
     jw = wire(collect_justwatch())
     cp = wire(collect_coupang(max_pages=max_pages, pause=pause), memory="2Gi").after(jw)
     # The first run also unpacks MovieLens 25M for the tmdb -> movieId links, which needs the larger limit
-    wire(match_and_build(), memory="6Gi").after(cp)
+    built = wire(match_and_build(), memory="6Gi").after(cp)
+    # Re-place today's catalog with the current champion so the service's 6-hourly reload picks it up
+    wire(place_catalog(), memory="2Gi").after(built)
 
 
 if __name__ == "__main__":
