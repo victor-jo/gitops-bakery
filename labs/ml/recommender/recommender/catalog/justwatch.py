@@ -59,7 +59,21 @@ def default_years() -> list[tuple[int, int]]:
         (y, y) for y in range(2000, date.today().year + 2)]
 
 
-def _pages(field: str, query: str, variables: dict, post: Post, pause: float):
+def _paced(post: Post, pause: float) -> Post:
+    """Wrap post so every request except the first waits `pause` seconds after the previous one."""
+    first = True
+
+    def paced(query: str, variables: dict) -> dict:
+        nonlocal first
+        if not first:
+            time.sleep(pause)
+        first = False
+        return post(query, variables)
+
+    return paced
+
+
+def _pages(field: str, query: str, variables: dict, post: Post):
     after = None
     while True:
         conn = post(query, {**variables, "first": PAGE_SIZE, "after": after})["data"][field]
@@ -67,7 +81,6 @@ def _pages(field: str, query: str, variables: dict, post: Post, pause: float):
         if not conn["pageInfo"]["hasNextPage"]:
             return
         after = conn["pageInfo"]["endCursor"]
-        time.sleep(pause)
 
 
 def _row(node: dict, package: str) -> dict:
@@ -92,13 +105,14 @@ def fetch_service(package: str, post: Post, years: list[tuple[int, int]] | None 
     popularTitles pass (JustWatch order, capped near 1,900); titles it never reaches are
     appended after it by tmdb score descending.
     """
+    post = _paced(post, pause)
     rows: dict[str, dict] = {}
     for lo, hi in years or default_years():
         for node in _pages("popularTitles", _POPULAR,
-                           {"country": COUNTRY, "pkg": [package], "min": lo, "max": hi}, post, pause):
+                           {"country": COUNTRY, "pkg": [package], "min": lo, "max": hi}, post):
             rows.setdefault(node["objectId"], _row(node, package))
     ranked: list[str] = []
-    for node in _pages("popularTitles", _POPULAR_ALL, {"country": COUNTRY, "pkg": [package]}, post, pause):
+    for node in _pages("popularTitles", _POPULAR_ALL, {"country": COUNTRY, "pkg": [package]}, post):
         oid = node["objectId"]
         rows.setdefault(oid, _row(node, package))
         if oid not in ranked:
@@ -111,13 +125,15 @@ def fetch_service(package: str, post: Post, years: list[tuple[int, int]] | None 
     return df
 
 
-def new_titles(day: date, packages: list[str], post: Post) -> pd.DataFrame:
-    """Return movies that JustWatch lists as newly added on the given day."""
+def new_titles(day: date, packages: list[str], post: Post, pause: float = 0.3) -> pd.DataFrame:
+    """Return movies that JustWatch lists as newly added on the given day, one query per package."""
+    post = _paced(post, pause)
     rows = [
         {"justwatch_id": n["objectId"], "tmdb_id": (n["content"]["externalIds"] or {}).get("tmdbId"),
-         "service": packages[0] if len(packages) == 1 else None, "added_on": day}
+         "service": pkg, "added_on": day}
+        for pkg in packages
         for n in _pages("newTitles", _NEW,
-                        {"country": COUNTRY, "date": day.isoformat(), "packages": packages}, post, 0.3)
+                        {"country": COUNTRY, "date": day.isoformat(), "packages": [pkg]}, post)
         if n.get("content")
     ]
     return pd.DataFrame(rows, columns=["justwatch_id", "tmdb_id", "service", "added_on"])

@@ -70,3 +70,30 @@ def test_search_exact_normalized_title_and_year():
     assert search_tmdb_id("기 생충!", 2019, _search_post("기생충", 2020)) == "496243"
     assert search_tmdb_id("기생충", 2019, _search_post("기생충2", 2019)) is None
     assert search_tmdb_id("기생충", 2019, _search_post("기생충", 2015)) is None
+
+
+def test_pause_between_every_request_including_slice_boundaries(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr("recommender.catalog.justwatch.time.sleep", sleeps.append)
+    calls = []
+
+    def post(query, variables):
+        calls.append(variables)
+        return fake_post(query, variables)
+
+    fetch_service("nfx", post, years=[(1900, 1979), (1900, 1979)], pause=0.3)
+    # 2 single-slice requests (2 pages each) + unfiltered pass (2 pages): sleep before all but the first
+    assert len(calls) == 6 and sleeps == [0.3] * 5
+
+
+def test_new_titles_queries_each_package_and_stamps_service(monkeypatch):
+    monkeypatch.setattr("recommender.catalog.justwatch.time.sleep", lambda s: None)
+
+    def post(query, variables):
+        pkg = variables["packages"][0]
+        return {"data": {"newTitles": {
+            "pageInfo": {"hasNextPage": False, "endCursor": None},
+            "edges": [{"node": {"objectId": pkg + "1", "content": {"externalIds": {"tmdbId": "1"}}}}]}}}
+
+    df = new_titles(date(2026, 11, 5), ["nfx", "dnp"], post)
+    assert list(df.service) == ["nfx", "dnp"] and list(df.justwatch_id) == ["nfx1", "dnp1"]
