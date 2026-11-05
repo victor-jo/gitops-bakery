@@ -5,6 +5,8 @@ import pandas as pd
 import torch
 from torch import nn
 
+PREDICT_BATCH = 1_000_000
+
 
 class MF(nn.Module):
     """logit(u, i) = user_vec[u] . item_vec[i] + user_bias[u] + item_bias[i] + global_bias."""
@@ -32,9 +34,9 @@ def train(
 ) -> MF:
     torch.manual_seed(0)
     model = MF(n_users, n_items, dim)
-    u = torch.as_tensor(df["user_idx"].to_numpy(), dtype=torch.long)
-    i = torch.as_tensor(df["item_idx"].to_numpy(), dtype=torch.long)
-    y = torch.as_tensor(df["label"].to_numpy(), dtype=torch.float32)
+    u = torch.from_numpy(df["user_idx"].to_numpy())
+    i = torch.from_numpy(df["item_idx"].to_numpy())
+    y = torch.from_numpy(df["label"].to_numpy(dtype="float32"))
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     loss_fn = nn.BCEWithLogitsLoss()
     model.train()
@@ -43,7 +45,7 @@ def train(
         for start in range(0, len(y), batch):
             idx = order[start:start + batch]
             opt.zero_grad()
-            loss_fn(model(u[idx], i[idx]), y[idx]).backward()
+            loss_fn(model(u[idx].long(), i[idx].long()), y[idx]).backward()
             opt.step()
     model.eval()
     return model
@@ -51,9 +53,14 @@ def train(
 
 def predict(model: MF, user_idx, item_idx) -> np.ndarray:
     """Like-probabilities for aligned user/item index arrays."""
+    user_idx, item_idx = np.asarray(user_idx), np.asarray(item_idx)
+    out = np.empty(len(user_idx), dtype=np.float32)
     with torch.no_grad():
-        logits = model(torch.as_tensor(user_idx, dtype=torch.long), torch.as_tensor(item_idx, dtype=torch.long))
-    return torch.sigmoid(logits).numpy()
+        for s in range(0, len(out), PREDICT_BATCH):
+            u = torch.from_numpy(user_idx[s:s + PREDICT_BATCH]).long()
+            i = torch.from_numpy(item_idx[s:s + PREDICT_BATCH]).long()
+            out[s:s + PREDICT_BATCH] = torch.sigmoid(model(u, i)).numpy()
+    return out
 
 
 def export(model: MF) -> dict:

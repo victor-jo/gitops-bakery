@@ -34,9 +34,9 @@ def load_movielens(
     item_codes, items = pd.factorize(ratings["movieId"], sort=True)
     item_index = {int(m): i for i, m in enumerate(items)}
     rows = pd.DataFrame({
-        "user_idx": user_codes.astype("int64"),
-        "item_idx": item_codes.astype("int64"),
-        "label": (ratings["rating"].to_numpy() >= LIKE_RATING).astype("float64"),
+        "user_idx": user_codes.astype("int32"),
+        "item_idx": item_codes.astype("int32"),
+        "label": (ratings["rating"].to_numpy() >= LIKE_RATING).astype("float32"),
     })
     n = len(users)
     user_index = {"me": n, "wife": n + 1}
@@ -44,9 +44,9 @@ def load_movielens(
     if len(couple):
         known = couple[couple["movielens_id"].astype("Int64").isin(list(item_index))]
         extra = pd.DataFrame({
-            "user_idx": known["viewer"].map(user_index).astype("int64"),
-            "item_idx": known["movielens_id"].astype("int64").map(item_index).astype("int64"),
-            "label": known["liked"].astype("float64"),
+            "user_idx": known["viewer"].map(user_index).astype("int32"),
+            "item_idx": known["movielens_id"].astype("int64").map(item_index).astype("int32"),
+            "label": known["liked"].astype("float32"),
         })
         rows = pd.concat([rows, extra], ignore_index=True)
     return rows, user_index, item_index
@@ -62,3 +62,13 @@ def split(df: pd.DataFrame, seed: int = 42) -> tuple[pd.DataFrame, pd.DataFrame,
 def split_couple(rows: pd.DataFrame, seed: int = 42) -> tuple[pd.DataFrame, pd.DataFrame]:
     """80/20 split of the couple's own rows into training rows and a holdout kept for evaluation."""
     return train_test_split(rows, test_size=0.2, random_state=seed)
+
+
+def split_all(
+    df: pd.DataFrame, user_index: dict[str, int], seed: int = 42
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Split MovieLens rows 75/15/10 and the couple's rows 80/20; the couple's train part joins train."""
+    is_couple = df["user_idx"].isin(list(user_index.values())).to_numpy()
+    train, val, test = split(df[~is_couple], seed)
+    couple_train, couple_holdout = split_couple(df[is_couple], seed)
+    return pd.concat([train, couple_train], ignore_index=True), val, test, couple_holdout

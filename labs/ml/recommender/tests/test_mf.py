@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 
-from recommender.model.data import load_couple_feedback, load_movielens, split, split_couple
+from recommender.model.data import load_couple_feedback, load_movielens, split, split_all, split_couple
 from recommender.model.evaluate import auc
 from recommender.model.mf import export, predict, train
 
@@ -90,3 +90,33 @@ def test_train_learns_block_structure_and_export_shapes():
     assert exp["user_vecs"].shape == (50, 32)
     assert exp["item_bias"].shape == (40,) and exp["user_bias"].shape == (50,)
     assert isinstance(exp["global_bias"], float)
+
+
+def test_rows_use_compact_dtypes():
+    ratings = pd.DataFrame({"userId": [1, 2], "movieId": [5, 6], "rating": [4.0, 2.0], "timestamp": [1, 2]})
+    rows, _, _ = load_movielens(ratings, _couple([["me", 5, True]]))
+    assert rows.user_idx.dtype == np.int32 and rows.item_idx.dtype == np.int32
+    assert rows.label.dtype == np.float32
+
+
+def test_split_all_keeps_couple_rows_out_of_val_and_test():
+    ml = pd.DataFrame({"user_idx": np.arange(1000, dtype=np.int32) % 50, "item_idx": np.int32(0),
+                       "label": np.float32(1)})
+    couple = pd.DataFrame({"user_idx": np.int32(50), "item_idx": np.arange(10, dtype=np.int32),
+                           "label": np.float32(1)})
+    df = pd.concat([ml, couple], ignore_index=True)
+    train_df, val, test, holdout = split_all(df, {"me": 50, "wife": 51})
+    assert (len(val), len(test), len(holdout)) == (150, 100, 2)
+    assert len(train_df) == 750 + 8
+    assert not (val.user_idx == 50).any() and not (test.user_idx == 50).any()
+    assert (train_df.user_idx == 50).sum() == 8 and train_df.user_idx.dtype == np.int32
+
+
+def test_predict_batches(monkeypatch):
+    import recommender.model.mf as mf
+    model = train(pd.DataFrame({"user_idx": np.int32([0, 1]), "item_idx": np.int32([0, 1]),
+                                "label": np.float32([1, 0])}), 2, 2, epochs=1)
+    u, i = np.int32([0, 1, 0, 1, 1]), np.int32([0, 1, 1, 0, 1])
+    full = predict(model, u, i)
+    monkeypatch.setattr(mf, "PREDICT_BATCH", 2)
+    assert np.allclose(predict(model, u, i), full)
