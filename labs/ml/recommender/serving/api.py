@@ -69,7 +69,7 @@ class _Catalog:
 
 
 class _Couple:
-    """The couple's replayed state and both taste vectors, kept in step with the store."""
+    """The couple's replayed state and both taste vectors, folded here, pushed to the store and read back from it."""
 
     def __init__(self, store: Store):
         self.store = store
@@ -90,7 +90,7 @@ class _Couple:
         self.push()
 
     def push(self) -> None:
-        """Best-effort copy of new tastes to the store; the in-process vectors stay authoritative."""
+        """Copy new tastes to the store; a failed push stays queued for the next round unless a newer taste replaced it."""
         with self.lock:
             pending, self.unpushed = self.unpushed, {}
         for vid, u in pending.items():
@@ -98,6 +98,32 @@ class _Couple:
                 self.store.push_taste(vid, u)
             except Exception:
                 log.warning("taste push failed for %s", vid, exc_info=True)
+                with self.lock:
+                    self.unpushed.setdefault(vid, u)
+
+    def tastes(self) -> dict[str, np.ndarray]:
+        """Each viewer's taste as the store serves it, or the in-process one when the read fails, is empty or is stale."""
+        with self.lock:
+            local, stale = dict(self.taste), set(self.unpushed)
+        out = {}
+        for vid, u in local.items():
+            why = "its last push has not landed" if vid in stale else None
+            if why is None:
+                try:
+                    got = self.store.taste(vid)
+                except Exception as e:
+                    why = f"read failed: {e!r}"
+                else:
+                    if got is None:
+                        why = "no vector stored"
+                    elif np.shape(got) != u.shape:
+                        why = f"stored vector has shape {np.shape(got)}, expected {u.shape}"
+            if why is None:
+                out[vid] = np.asarray(got, np.float32)
+            else:
+                log.warning("taste of %s comes from memory, not the store: %s", vid, why)
+                out[vid] = u
+        return out
 
     def _pair(self) -> tuple[pd.DataFrame, float]:
         # Re-read the catalog after the bias so both come from the same store snapshot.
@@ -204,9 +230,10 @@ def create_app(store: Store) -> FastAPI:
 
     @app.get("/api/recommendations")
     def recommendations() -> list[dict]:
+        # Refold on a catalog change and push before reading, so the store serves the vectors just folded
         with couple.session():
-            cat = couple.current()
-            return recommend(cat.df, cat.global_bias, dict(couple.taste), couple.state)
+            cat, state = couple.current(), couple.state
+        return recommend(cat.df, cat.global_bias, couple.tastes(), state)
 
     app.mount("/", StaticFiles(directory=WEB, html=True), name="web")
     return app

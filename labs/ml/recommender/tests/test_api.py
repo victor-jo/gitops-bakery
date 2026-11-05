@@ -42,6 +42,8 @@ class MemStore:
         self.cat = _catalog() if catalog is None else catalog
         self.log = list(events or [])
         self.pushed: list[tuple[str, np.ndarray]] = []
+        self.online: dict[str, np.ndarray] = {}  # the Feast online store: the last pushed vector per viewer
+        self.reads: list[str] = []
 
     def catalog(self):
         return self.cat
@@ -57,9 +59,11 @@ class MemStore:
 
     def push_taste(self, viewer, vector):
         self.pushed.append((viewer, np.asarray(vector)))
+        self.online[viewer] = np.asarray(vector)
 
     def taste(self, viewer):
-        return None
+        self.reads.append(viewer)
+        return self.online.get(viewer)
 
 
 def _at(minute):
@@ -204,6 +208,81 @@ def test_a_failed_push_during_a_catalog_change_still_refolds_both_viewers():
     # Each refolded taste follows the swapped axes of the new catalog
     for v in ("me", "wife"):
         np.testing.assert_allclose(new[v], old[v][::-1], atol=1e-4)
+
+
+def _p(c, viewer):
+    return {r["movie_key"]: r[f"p_{viewer}"] for r in c.get("/api/recommendations").json()}
+
+
+def test_recommendations_score_with_the_taste_read_from_the_store():
+    store = MemStore()
+    c = _client(store)
+    store.reads.clear()
+    store.online["me"] = np.array([0.0, 5.0], np.float32)  # Feast says "me" loves b's direction
+    p = _p(c, "me")
+    assert sorted(store.reads) == ["me", "wife"]
+    assert p["b"] == pytest.approx(1 / (1 + np.exp(-10.0)))
+    assert p["a"] == pytest.approx(0.5)
+    assert _p(c, "wife")["b"] == pytest.approx(0.5)  # her stored taste is still the zero prior
+
+
+def test_a_mark_is_pushed_and_then_read_back_for_the_next_recommendations():
+    store = MemStore()
+    c = _client(store)
+    before = _p(c, "wife")
+    c.post("/api/mark", json={"viewer": "wife", "movie_key": "b", "liked": False, "source": "onboarding"})
+    pushed = store.pushed[-1]
+    assert pushed[0] == "wife"
+    np.testing.assert_array_equal(store.online["wife"], pushed[1])
+    store.reads.clear()
+    after = _p(c, "wife")
+    assert "wife" in store.reads
+    assert after["d"] < before["d"]  # d leans toward b, which she now dislikes
+
+
+class BrokenReadStore(MemStore):
+    def __init__(self, broken, **kw):
+        super().__init__(**kw)
+        self.broken = broken
+
+    def taste(self, viewer):
+        if self.broken == "raise":
+            raise ConnectionError("valkey down")
+        if self.broken == "none":
+            return None
+        return np.zeros(3, np.float32)  # a vector of the wrong shape
+
+
+@pytest.mark.parametrize("broken,why", [("raise", "valkey down"), ("none", "no vector stored"),
+                                        ("shape", "expected (2,)")])
+def test_a_failed_or_empty_store_read_falls_back_to_the_folded_taste(broken, why, caplog):
+    marks = [Event("mark", "me", "b", True, None, _at(1)), Event("mark", "wife", "d", False, None, _at(2))]
+    expected = _p(_client(MemStore(events=marks)), "me")
+    c = _client(BrokenReadStore(broken, events=marks))
+    with caplog.at_level("WARNING", logger="serving.api"):
+        resp = c.get("/api/recommendations")
+    assert resp.status_code == 200
+    assert {r["movie_key"]: r["p_me"] for r in resp.json()} == pytest.approx(expected)
+    lines = [r.getMessage() for r in caplog.records]
+    assert len(lines) == 2
+    for vid, line in zip(("me", "wife"), lines):
+        assert line.startswith(f"taste of {vid} comes from memory") and why in line
+
+
+def test_a_taste_whose_push_failed_is_not_read_back_stale():
+    store = FailingPushStore()
+    store.fail = False
+    c = _client(store)
+    store.fail = True
+    c.post("/api/mark", json={"viewer": "me", "movie_key": "b", "liked": True, "source": "onboarding"})
+    store.reads.clear()
+    p = _p(c, "me")
+    assert store.reads == ["wife"]  # the store still holds her current taste but not his
+    assert p["c"] > 0.5  # his folded taste, liking b, is used rather than the stale zero vector
+    store.fail = False
+    c.get("/api/recommendations")  # the queued push lands on the next request
+    assert store.attempts[-1][0] == "me"
+    np.testing.assert_array_equal(store.online["me"], store.attempts[-1][1])
 
 
 @pytest.mark.parametrize(
