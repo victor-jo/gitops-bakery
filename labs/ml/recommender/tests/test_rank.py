@@ -2,7 +2,9 @@
 import numpy as np
 import pandas as pd
 
-from recommender.core.rank import recommend
+import pytest
+
+from recommender.core.rank import and_particle, recommend
 from recommender.core.state import CoupleState, ViewerState
 
 
@@ -88,10 +90,13 @@ def test_reason_prefers_shared_like():
     cat = _cat([("cand", 0.9, 0.9), ("liked", 0.9, 0.9)])
     c = CoupleState({"me": ViewerState(liked={"liked"}), "wife": ViewerState(liked={"liked"})})
     out = recommend(cat, 0.0, TASTE, c)
-    assert out[0]["reason"] == "둘 다 좋아한 'Tliked'과 비슷해요"
+    assert out[0]["reason"] == "둘 다 좋아한 'Tliked'와(과) 비슷해요"
     c.viewers["wife"].liked = set()
     c.viewers["wife"].genres = ["drama"]
-    assert recommend(cat, 0.0, TASTE, c)[0]["reason"] == "나이(가) 좋아한 'Tliked'과 비슷해요"
+    assert recommend(cat, 0.0, TASTE, c)[0]["reason"] == "내가 좋아한 'Tliked'와(과) 비슷해요"
+    c.viewers["me"].liked, c.viewers["wife"].liked = set(), {"liked"}
+    cat["title"] = ["후보", "기생충"]
+    assert recommend(cat, 0.0, TASTE, c)[0]["reason"] == "아내가 좋아한 '기생충'과 비슷해요"
     assert out[0]["services"] == ["Netflix"]
 
 
@@ -136,3 +141,21 @@ def test_mark_without_liked_is_ignored():
 
     s = replay([Event("mark", "me", "a", None, None, datetime(2026, 1, 1, tzinfo=timezone.utc))])
     assert not s.viewers["me"].liked and not s.viewers["me"].disliked
+
+
+@pytest.mark.parametrize("title,particle", [
+    ("모아나", "와"), ("기생충", "과"), ("Up", "와(과)"), ("2012", "와"), ("1987", "과"), ("", "와(과)"),
+])
+def test_and_particle(title, particle):
+    assert and_particle(title) == particle
+
+
+def test_reason_falls_back_to_genre_when_the_liked_movie_is_not_similar():
+    cat = _cat([("cand", 0.9, 0.9), ("liked", 0.9, 0.9)])
+    # Orthogonal vectors: cosine 0 is below the floor, so naming 'liked' would mislead
+    cat["vector"] = [np.array([2.0, 0.0], np.float32), np.array([0.0, 2.0], np.float32)]
+    c = CoupleState({"me": ViewerState(liked={"liked"}), "wife": ViewerState(liked={"liked"})})
+    taste = {"me": np.array([1.0, 1.0], np.float32), "wife": np.array([1.0, 1.0], np.float32)}
+    out = recommend(cat, 0.0, taste, c)
+    assert out[0]["movie_key"] == "cand"
+    assert out[0]["reason"] == "드라마 장르에서 한국 인기작이에요"

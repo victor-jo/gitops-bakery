@@ -9,6 +9,21 @@ from recommender.core.state import CoupleState
 from recommender.genres import KOREAN_LABEL
 
 _COS_FLOOR = 0.7
+# A liked movie less similar than this is not named as the reason; the genre copy is used instead
+_REASON_MIN_COS = 0.3
+_SUBJECT = {"me": "내가", "wife": "아내가"}
+# Digits whose Korean reading ends in a final consonant: 영 일 삼 육 칠 팔
+_DIGITS_WITH_FINAL = set("013678")
+
+
+def and_particle(title: str) -> str:
+    """과 or 와 for the title, chosen by whether its last sound ends in a consonant; 와(과) when unknown."""
+    c = title[-1:]
+    if "가" <= c <= "힣":
+        return "과" if (ord(c) - 0xAC00) % 28 else "와"
+    if c.isdigit():
+        return "과" if c in _DIGITS_WITH_FINAL else "와"
+    return "와(과)"
 
 
 def _unit(m: np.ndarray) -> np.ndarray:
@@ -87,10 +102,13 @@ def recommend(
 
 
 def _nearest(unit: np.ndarray, row: int, liked_keys, key_row: dict) -> int | None:
+    """The most similar liked movie, or None when none is at least _REASON_MIN_COS similar."""
     rows = [key_row[k] for k in liked_keys if k in key_row]
     if not rows:
         return None
-    return rows[int(np.argmax(unit[rows] @ unit[row]))]
+    cos = unit[rows] @ unit[row]
+    best = int(np.argmax(cos))
+    return rows[best] if cos[best] >= _REASON_MIN_COS else None
 
 
 def _entry(catalog, i, gamble, probs, unit, key_row, couple, cand_genres) -> dict:
@@ -101,12 +119,14 @@ def _entry(catalog, i, gamble, probs, unit, key_row, couple, cand_genres) -> dic
     both = couple.viewers["me"].liked & couple.viewers["wife"].liked
     near = _nearest(unit, i, both, key_row)
     if near is not None:
-        reason = f"둘 다 좋아한 '{catalog.iloc[near]['title']}'과 비슷해요"
+        title = catalog.iloc[near]["title"]
+        reason = f"둘 다 좋아한 '{title}'{and_particle(title)} 비슷해요"
     else:
         for vid in sorted(VIEWERS, key=lambda v: -pv[v]):
             near = _nearest(unit, i, couple.viewers[vid].liked, key_row)
             if near is not None:
-                reason = f"{VIEWERS[vid]}이(가) 좋아한 '{catalog.iloc[near]['title']}'과 비슷해요"
+                title = catalog.iloc[near]["title"]
+                reason = f"{_SUBJECT[vid]} 좋아한 '{title}'{and_particle(title)} 비슷해요"
                 break
     if reason is None:
         chosen = set(couple.viewers["me"].genres) | set(couple.viewers["wife"].genres)
