@@ -164,6 +164,48 @@ def test_a_new_catalog_is_picked_up_and_both_viewers_are_refolded():
     assert c.post("/api/watched", json={"movie_key": "a"}).status_code == 404
 
 
+class FailingPushStore(MemStore):
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.fail = True
+        self.attempts: list[tuple[str, np.ndarray]] = []
+
+    def push_taste(self, viewer, vector):
+        self.attempts.append((viewer, np.asarray(vector)))
+        if self.fail:
+            raise ConnectionError("valkey down")
+        super().push_taste(viewer, vector)
+
+
+def test_a_failed_taste_push_still_records_the_mark():
+    events = [Event("genres", v, None, None, ["drama"], _at(0)) for v in ("me", "wife")]
+    store = FailingPushStore(events=events)
+    c = _client(store)  # start-up survives the failing pushes too
+    before = _keys(c.get("/api/recommendations"))
+    n = len(store.log)
+    resp = c.post("/api/mark", json={"viewer": "me", "movie_key": "a", "liked": True, "source": "onboarding"})
+    assert resp.status_code == 200 and resp.json() == {"ok": True}
+    assert len(store.log) == n + 1
+    after = _keys(c.get("/api/recommendations"))
+    assert after != before and "a" not in after
+
+
+def test_a_failed_push_during_a_catalog_change_still_refolds_both_viewers():
+    store = FailingPushStore()
+    c = _client(store)
+    c.post("/api/mark", json={"viewer": "me", "movie_key": "b", "liked": True, "source": "onboarding"})
+    c.post("/api/mark", json={"viewer": "wife", "movie_key": "d", "liked": True, "source": "onboarding"})
+    store.cat = _catalog().assign(vector=[np.array([y, x], np.float32) for x, y in _catalog()["vector"]])
+    old = {v: u for v, u in store.attempts}
+    store.attempts.clear()
+    assert c.get("/api/recommendations").status_code == 200
+    new = dict(store.attempts)
+    assert sorted(new) == ["me", "wife"]
+    # Each refolded taste follows the swapped axes of the new catalog
+    for v in ("me", "wife"):
+        np.testing.assert_allclose(new[v], old[v][::-1], atol=1e-4)
+
+
 @pytest.mark.parametrize(
     "method,path,body",
     [

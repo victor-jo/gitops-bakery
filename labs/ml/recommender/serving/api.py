@@ -1,7 +1,9 @@
 # FastAPI app of the recommender: genres, onboarding posters, marks, watched and weekend picks
 from __future__ import annotations
 
+import logging
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Protocol
@@ -19,6 +21,8 @@ from recommender.core.state import CoupleState, Event, replay
 from recommender.genres import CANONICAL, KOREAN_LABEL
 
 WEB = Path(__file__).resolve().parent.parent / "web"
+
+log = logging.getLogger(__name__)
 
 
 class Store(Protocol):
@@ -68,12 +72,38 @@ class _Couple:
         self.log: list[Event] = store.events()
         self.state: CoupleState = replay(self.log)
         self.taste: dict[str, np.ndarray] = {}
+        self.unpushed: dict[str, np.ndarray] = {}
         self.cat: _Catalog | None = None
         self.current()
+        self.push()
+
+    @contextmanager
+    def session(self):
+        """Hold the lock for reads and updates, then push any refolded tastes after releasing it."""
+        with self.lock:
+            yield
+        self.push()
+
+    def push(self) -> None:
+        """Best-effort copy of new tastes to the store; the in-process vectors stay authoritative."""
+        with self.lock:
+            pending, self.unpushed = self.unpushed, {}
+        for vid, u in pending.items():
+            try:
+                self.store.push_taste(vid, u)
+            except Exception:
+                log.warning("taste push failed for %s", vid, exc_info=True)
+
+    def _pair(self) -> tuple[pd.DataFrame, float]:
+        # Re-read the catalog after the bias so both come from the same store snapshot.
+        while True:
+            df, gb = self.store.catalog(), self.store.global_bias()
+            if self.store.catalog() is df:
+                return df, gb
 
     def current(self) -> _Catalog:
         """Return the catalog arrays, rebuilding them and refolding both viewers when the store has a new catalog."""
-        df, gb = self.store.catalog(), self.store.global_bias()
+        df, gb = self._pair()
         if self.cat is None or self.cat.df is not df or self.cat.global_bias != gb:
             self.cat = _Catalog(df, gb)
             for vid in VIEWERS:
@@ -95,7 +125,7 @@ class _Couple:
         prior = genre_prior(cat.vecs, cat.genres, cat.popularity, vs.genres)
         u = fold_in(cat.vecs[rows], cat.bias[rows], cat.global_bias, labels, prior)
         self.taste[vid] = u
-        self.store.push_taste(vid, u)
+        self.unpushed[vid] = u
 
 
 def _viewer(vid: str) -> str:
@@ -125,7 +155,7 @@ def create_app(store: Store) -> FastAPI:
     @app.post("/api/viewer/{viewer}/genres")
     def set_genres(viewer: str, body: GenresBody) -> dict:
         vid = _viewer(viewer)
-        with couple.lock:
+        with couple.session():
             couple.current()
             couple.apply(Event("genres", vid, None, None, list(body.genres), _now()))
             couple.refold(vid)  # the genre prior changed
@@ -134,7 +164,7 @@ def create_app(store: Store) -> FastAPI:
     @app.get("/api/onboarding")
     def onboarding(viewer: str, offset: int = Query(0, ge=0), limit: int = Query(30, ge=1, le=100)) -> list[dict]:
         vid = _viewer(viewer)
-        with couple.lock:
+        with couple.session():
             cat = couple.current()
             vs = couple.state.viewers[vid]
             chosen, marked = set(vs.genres), vs.liked | vs.disliked
@@ -154,7 +184,7 @@ def create_app(store: Store) -> FastAPI:
     @app.post("/api/mark")
     def mark(body: MarkBody) -> dict:
         vid = _viewer(body.viewer)
-        with couple.lock:
+        with couple.session():
             _movie(couple.current(), body.movie_key)
             couple.apply(Event("mark", vid, body.movie_key, body.liked, None, _now()))
             couple.refold(vid)
@@ -162,14 +192,14 @@ def create_app(store: Store) -> FastAPI:
 
     @app.post("/api/watched")
     def watched(body: WatchedBody) -> dict:
-        with couple.lock:
+        with couple.session():
             _movie(couple.current(), body.movie_key)
             couple.apply(Event("watched", None, body.movie_key, None, None, _now()))
         return {"ok": True}
 
     @app.get("/api/recommendations")
     def recommendations() -> list[dict]:
-        with couple.lock:
+        with couple.session():
             cat = couple.current()
             return recommend(cat.df, cat.global_bias, dict(couple.taste), couple.state)
 
