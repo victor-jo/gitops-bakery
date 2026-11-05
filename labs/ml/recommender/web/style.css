@@ -7,6 +7,7 @@
   :root { --bg: #121212; --fg: #ececec; --muted: #9a9a9a; --card: #1e1e1e; --line: #3a3a3a; }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   margin: 0; background: var(--bg); color: var(--fg);
   font: 16px/1.45 system-ui, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;

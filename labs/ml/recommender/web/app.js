@@ -16,6 +16,12 @@ let observer = null;
 function saved() {
   try { return localStorage.getItem("viewer"); } catch (e) { return null; }
 }
+function genresDone(id) {
+  try { return localStorage.getItem("genres_" + id) === "1"; } catch (e) { return false; }
+}
+function markGenresDone(id) {
+  try { localStorage.setItem("genres_" + id, "1"); } catch (e) { /* storage unavailable */ }
+}
 function save(id) {
   try { localStorage.setItem("viewer", id); } catch (e) { /* storage unavailable */ }
 }
@@ -59,6 +65,12 @@ function show(...nodes) {
   window.scrollTo(0, 0);
 }
 
+// Put one retry box into a container, replacing any earlier one.
+function showError(container, retry) {
+  container.querySelectorAll(":scope > .err").forEach((n) => n.remove());
+  container.append(errorBox(() => { container.querySelectorAll(":scope > .err").forEach((n) => n.remove()); retry(); }));
+}
+
 function errorBox(retry) {
   return el("div", { class: "err" },
     el("p", {}, "연결에 문제가 있어요. 잠시 후 다시 시도해 주세요."),
@@ -75,8 +87,8 @@ async function guarded(run) {
   }
 }
 
-function poster(m) {
-  const box = el("div", { class: "poster" });
+function poster(m, container) {
+  const box = container || el("div", { class: "poster" });
   const placeholder = () => box.replaceChildren(el("div", { class: "ph" }, m.title));
   if (m.poster_url) {
     const img = el("img", { src: m.poster_url, alt: m.title, loading: "lazy" });
@@ -94,7 +106,7 @@ function profileScreen() {
   show(
     el("h1", {}, "누가 보나요?"),
     ...VIEWERS.map((v) => el("button", {
-      class: "block", type: "button", onclick: () => choose(v.id, genresScreen),
+      class: "block", type: "button", onclick: () => choose(v.id, genresDone(v.id) ? picksScreen : genresScreen),
     }, v.label)));
 }
 
@@ -107,6 +119,7 @@ function choose(id, next) {
 
 // ---- 2. genres ----
 function genresScreen() {
+  if (!viewer) { profileScreen(); return; }
   guarded(async () => {
     const genres = await api("/api/genres");
     const picked = new Set();
@@ -125,6 +138,7 @@ function genresScreen() {
     next.addEventListener("click", () => {
       guarded(async () => {
         await api("/api/viewer/" + viewer + "/genres", { genres: [...picked] });
+        markGenresDone(viewer);
         onboardScreen();
       });
     });
@@ -132,12 +146,14 @@ function genresScreen() {
       el("h1", {}, "어떤 장르를 좋아하세요?"),
       el("p", { class: "hint" }, "여러 개 고를 수 있어요."),
       el("div", { class: "chips" }, ...chips),
-      next);
+      next,
+      el("button", { class: "block", type: "button", onclick: () => picksScreen() }, "추천 보기"));
   });
 }
 
 // ---- 3. poster grid ----
 function onboardScreen() {
+  if (!viewer) { profileScreen(); return; }
   const grid = el("div", { class: "grid" });
   const status = el("div", {});
   const sentinel = el("div", { class: "sentinel" });
@@ -153,7 +169,7 @@ function onboardScreen() {
     open = card;
     if (card.querySelector(".votes")) return;
     const vote = (liked) => async (ev) => {
-      ev.stopPropagation();
+      if (ev) ev.stopPropagation();
       try {
         await api("/api/mark", { viewer, movie_key: card.dataset.key, liked, source: "onboarding" });
         card.querySelector(".votes")?.remove();
@@ -162,9 +178,7 @@ function onboardScreen() {
         card.append(el("span", { class: "tag" }, liked ? "👍" : "👎"));
         if (open === card) open = null;
       } catch (e) {
-        card.querySelector(".votes")?.remove();
-        status.replaceChildren(errorBox(() => status.replaceChildren()));
-        open = null;
+        showError(status, () => vote(liked)());
       }
     };
     card.append(el("div", { class: "votes" },
@@ -181,7 +195,7 @@ function onboardScreen() {
       offset += items.length;
       for (const m of items) {
         const card = el("div", { class: "poster", "data-key": m.movie_key, role: "button", tabindex: "0" });
-        card.replaceChildren(...poster(m).childNodes);
+        poster(m, card);
         card.addEventListener("click", () => select(card));
         grid.append(card);
       }
@@ -211,6 +225,7 @@ function onboardScreen() {
 
 // ---- 4. weekend picks ----
 function picksScreen() {
+  if (!viewer) { profileScreen(); return; }
   guarded(async () => {
     const picks = await api("/api/recommendations");
     if (picks.length === 0) {
@@ -229,16 +244,17 @@ function pickCard(m) {
   if (m.gamble) badges.append(el("span", { class: "badge gamble" }, "조금 모험"));
   const actions = el("div", { class: "actions" });
   const watched = el("button", { type: "button" }, "같이 봤어요");
-  watched.addEventListener("click", async () => {
+  const send = async () => {
     watched.disabled = true;
     try {
       await api("/api/watched", { movie_key: m.movie_key });
       rateWatched(actions, m);
     } catch (e) {
       watched.disabled = false;
-      actions.append(errorBox(() => { actions.lastChild.remove(); }));
+      showError(actions, send);
     }
-  });
+  };
+  watched.addEventListener("click", send);
   actions.append(watched);
   return el("section", { class: "pick" },
     poster(m),

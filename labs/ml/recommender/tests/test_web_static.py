@@ -54,3 +54,8 @@ def test_no_external_urls_in_css_or_html():
     for name in ("index.html", "style.css"):
         text = (WEB / name).read_text(encoding="utf-8")
         assert not re.search(r"(https?:)?//[a-z0-9.-]+\.[a-z]{2,}", text), name
+
+
+def test_hidden_attribute_wins_over_display_rules():
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert re.search(r"\[hidden\]\s*\{\s*display:\s*none\s*!important", css)
