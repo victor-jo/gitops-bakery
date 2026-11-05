@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from recommender.catalog.coupang import content_urls, crawl, parse_page
+from recommender.catalog.coupang import content_urls, crawl, current_movies, parse_page, recheck_candidates
 
 FIX = Path(__file__).parent / "fixtures"
 MOVIE = (FIX / "coupang_movie.html").read_text()
@@ -109,3 +109,49 @@ def test_crawl_stops_on_429_and_after_repeated_failures_and_maps_410_to_gone():
     calls.clear()
     out = crawl(urls, lambda u: calls.append(u) or (503, ""), pd.DataFrame(), sleep=lambda s: None)
     assert len(calls) == 5 and len(out) == 0
+
+
+def _cache(rows):
+    """rows: (suffix, status, fetched_at day)."""
+    return pd.DataFrame([{"url": BASE + k, "coupang_id": k, "status": st, "title": f"T{k}",
+                          "fetched_at": pd.Timestamp(f"2026-01-{day:02d}", tz="UTC")} for k, st, day in rows])
+
+
+def test_current_movies_keeps_only_movies_still_in_the_sitemap():
+    cache = _cache([("a", "movie", 1), ("b", "movie", 2), ("c", "not_movie", 3), ("d", "gone", 4)])
+    out = current_movies(cache, [BASE + "a", BASE + "c", BASE + "d", BASE + "new"])
+    assert list(out["coupang_id"]) == ["a"]
+
+
+def test_recheck_picks_the_oldest_live_rows_and_skips_gone():
+    cache = _cache([("a", "movie", 5), ("b", "gone", 1), ("c", "not_movie", 2), ("d", "movie", 9),
+                    ("e", "movie", 3)])
+    assert recheck_candidates(cache, 3) == [BASE + "c", BASE + "e", BASE + "a"]
+    assert recheck_candidates(None) == [] and recheck_candidates(pd.DataFrame()) == []
+
+
+def test_crawl_rechecks_cached_rows_and_updates_status_and_time():
+    cache = _cache([("a", "movie", 1), ("b", "movie", 2), ("c", "not_movie", 3), ("d", "movie", 4)])
+    pages = {BASE + "a": (404, ""), BASE + "b": (200, SERIES), BASE + "c": (503, ""), BASE + "new": (200, MOVIE)}
+    calls, sleeps = [], []
+    out = crawl([BASE + "new"], lambda u: calls.append(u) or pages[u], cache, sleep=sleeps.append,
+                recheck=[BASE + "a", BASE + "b", BASE + "c"])
+    # New URLs first, then the rechecks, all one second apart; "d" was not due
+    assert calls == [BASE + "new", BASE + "a", BASE + "b", BASE + "c"] and sleeps == [1.0] * 3
+    by = out.set_index("coupang_id")
+    assert len(out) == 5 and out["url"].is_unique
+    assert by.loc["a", "status"] == "gone" and by.loc["b", "status"] == "not_movie"
+    assert by.loc["a", "fetched_at"] > pd.Timestamp("2026-02-01", tz="UTC")
+    # A transient failure keeps the old row as it was
+    assert by.loc["c", "status"] == "not_movie" and by.loc["c", "fetched_at"] == pd.Timestamp("2026-01-03", tz="UTC")
+    assert by.loc["d", "status"] == "movie" and by.loc["new", "status"] == "movie"
+
+
+def test_recheck_stops_on_429_and_refuses_api_paths():
+    cache = _cache([("a", "movie", 1), ("b", "movie", 2)])
+    calls = []
+    out = crawl([], lambda u: calls.append(u) or (429, ""), cache, sleep=lambda s: None,
+                recheck=[BASE + "a", BASE + "b"])
+    assert calls == [BASE + "a"] and out.equals(cache)
+    with pytest.raises(ValueError):
+        crawl([], lambda u: (200, MOVIE), cache, recheck=["https://www.coupangplay.com/api/x"])

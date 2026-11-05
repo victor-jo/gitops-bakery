@@ -16,6 +16,8 @@ USER_AGENT = "gitops-bakery-movie-rec (personal lab)"
 TIMEOUT = 20
 # Consecutive non-200/404 responses that end a pass.
 MAX_FAILURES = 5
+# Cached pages re-fetched per pass, oldest first, so titles that left Coupang Play drop out
+RECHECK_PER_RUN = 300
 # When False, datePublished is not an "added to Coupang" date and added_on stays None.
 COUPANG_ADDED_ON_IS_RELIABLE = True
 
@@ -88,28 +90,49 @@ def default_fetch(url: str) -> tuple[int, str]:
         return 0, ""  # network failure: treated as transient by crawl
 
 
+def recheck_candidates(cache: pd.DataFrame | None, n: int = RECHECK_PER_RUN) -> list[str]:
+    """URLs of the n oldest-fetched cached pages that were a movie or not a movie; gone pages stay gone."""
+    if cache is None or cache.empty:
+        return []
+    live = cache[cache["status"].isin(["movie", "not_movie"])]
+    return live.sort_values("fetched_at", kind="stable", na_position="first")["url"].head(n).tolist()
+
+
+def current_movies(pages: pd.DataFrame, sitemap_urls: list[str]) -> pd.DataFrame:
+    """Cached movie pages whose URL is still in today's sitemap."""
+    keep = (pages["status"] == "movie") & pages["url"].isin(set(sitemap_urls))
+    return pages[keep].reset_index(drop=True)
+
+
 def crawl(urls: list[str], fetch: Callable[[str], tuple[int, str]] = default_fetch,
           cache: pd.DataFrame | None = None, pause: float = 1.0,
           sleep: Callable[[float], None] = time.sleep,
           on_batch: Callable[[pd.DataFrame], None] | None = None,
-          batch_size: int = 200) -> pd.DataFrame:
-    """Fetch only URLs missing from the cache, pausing between requests; return cache plus new rows.
+          batch_size: int = 200, recheck: list[str] = ()) -> pd.DataFrame:
+    """Fetch URLs missing from the cache, then re-fetch the cached `recheck` URLs; return the updated cache.
 
-    Stops early (returning the partial frame) on 429/403 or after 5 consecutive transient failures.
+    Every request shares one pacing and the same stop rules: it stops early (returning the partial frame)
+    on 429/403 or after 5 consecutive transient failures. A recheck answered 404/410 becomes gone and one
+    without Movie JSON-LD becomes not_movie; a transient failure keeps the old row.
     on_batch receives the cache-so-far every batch_size new rows and once more if an error escapes.
     """
-    if any("/api" in u for u in urls):
+    if any("/api" in u for u in [*urls, *recheck]):
         raise ValueError("refusing to request an /api path")
     cache = pd.DataFrame() if cache is None else cache
     seen = set(cache["url"]) if "url" in cache else set()
+    refetch = set(recheck)
     rows, first, failures, flushed = [], True, 0, 0
 
     def so_far() -> pd.DataFrame:
-        return pd.concat([cache, pd.DataFrame(rows)], ignore_index=True) if rows else cache
+        if not rows:
+            return cache
+        replaced = {r["url"] for r in rows} & seen
+        kept = cache[~cache["url"].isin(replaced)] if replaced else cache
+        return pd.concat([kept, pd.DataFrame(rows)], ignore_index=True)
 
     try:
-        for url in dict.fromkeys(urls):
-            if url in seen:
+        for url in dict.fromkeys([*urls, *recheck]):
+            if url in seen and url not in refetch:
                 continue
             if not first:
                 sleep(pause)
@@ -121,7 +144,7 @@ def crawl(urls: list[str], fetch: Callable[[str], tuple[int, str]] = default_fet
             if code in (404, 410):
                 row = {"status": "gone"}
             elif code != 200:
-                failures += 1  # transient: leave uncached so the next pass retries it
+                failures += 1  # transient: leave uncached (or the old row) so the next pass retries it
                 if failures >= MAX_FAILURES:
                     print(f"coupang crawl stopped: {failures} consecutive failures (last HTTP {code})")
                     break

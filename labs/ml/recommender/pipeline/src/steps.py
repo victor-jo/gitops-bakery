@@ -24,6 +24,8 @@ JW_TITLES = "catalog/justwatch/titles.parquet"
 JW_NEW = "catalog/justwatch/new.parquet"
 COUPANG_PAGES = "catalog/coupang/pages.parquet"
 COUPANG_MATCHES = "catalog/coupang/tmdb_matches.json"
+# Today's sitemap URLs, so the build keeps only titles Coupang Play still lists
+COUPANG_SITEMAP = "catalog/coupang/sitemap_urls.json"
 SITEMAP = "https://www.coupangplay.com/sitemap.xml"
 CATALOG = "catalog/movies.parquet"
 FEATURES = "features/movies.parquet"
@@ -78,13 +80,15 @@ def collect_coupang(max_pages: int, pause: float) -> int:
     if code != 200:
         raise RuntimeError(f"sitemap answered HTTP {code}")
     urls = coupang.content_urls(xml)
+    s3.put_json(urls, COUPANG_SITEMAP)
     cache = s3.read_parquet(COUPANG_PAGES) if _exists(COUPANG_PAGES) else None
     seen = set(cache["url"]) if cache is not None else set()
     todo = [u for u in urls if u not in seen]
     if max_pages > 0:
         todo = todo[:max_pages]
-    print(f"coupang: {len(urls)} content urls, {len(seen)} cached, fetching {len(todo)}")
-    pages = coupang.crawl(todo, cache=cache, pause=pause,
+    recheck = coupang.recheck_candidates(cache)
+    print(f"coupang: {len(urls)} content urls, {len(seen)} cached, fetching {len(todo)}, rechecking {len(recheck)}")
+    pages = coupang.crawl(todo, cache=cache, pause=pause, recheck=recheck,
                           on_batch=lambda df: s3.write_parquet(df, COUPANG_PAGES))
     s3.write_parquet(pages, COUPANG_PAGES)
     print(f"coupang: cache now {len(pages)} pages, {int((pages['status'] == 'movie').sum())} movies")
@@ -116,10 +120,15 @@ def match_and_build() -> int:
     """Match Coupang titles to tmdb ids, merge the three services and write today's catalog."""
     from recommender.catalog import justwatch as jw
     from recommender.catalog.build import build_catalog, match_coupang
+    from recommender.catalog.coupang import current_movies
 
     ensure_movielens()
     pages = s3.read_parquet(COUPANG_PAGES)
-    movies = pages[pages["status"] == "movie"].reset_index(drop=True)
+    # A collect step from an image older than the sitemap snapshot leaves no list; keep every movie then
+    sitemap = _read_json(COUPANG_SITEMAP) if _exists(COUPANG_SITEMAP) else pages["url"].tolist()
+    movies = current_movies(pages, sitemap)
+    print(f"coupang: {len(movies)} cached movies still in the sitemap "
+          f"(of {int((pages['status'] == 'movie').sum())} cached)")
     known = _read_json(COUPANG_MATCHES) if _exists(COUPANG_MATCHES) else {}
     searched = 0
 

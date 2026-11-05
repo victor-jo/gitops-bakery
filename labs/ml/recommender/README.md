@@ -71,7 +71,7 @@ for p in catalog training monitoring; do .venv-rec/bin/python pipeline/run.py $p
 | `movie-recommender-monitoring` | Monday 07:00 | `0 0 22 * * 0` |
 
 - Creating is idempotent: a recurring run with the same name is deleted first, so rerunning the command never leaves duplicates.
-- All three use `max_concurrency=1` and `no_catchup`. That matters most for the catalog: the first Coupang pass takes hours, and a daily trigger must not start a second crawl while one is running. After the first pass only new URLs are fetched, so the daily run is short.
+- All three use `max_concurrency=1` and `no_catchup`. That matters most for the catalog: the first Coupang pass takes hours, and a daily trigger must not start a second crawl while one is running. After the first pass only new URLs and 300 rechecks (about 5 minutes) are fetched, so the daily run is short.
 - Check them in the KFP UI (Recurring runs), or list them:
 
 ```bash
@@ -105,8 +105,8 @@ The kind network addresses change, so the sslip.io names in `~/.gitops-bakery/st
 - **Coupang Play**: there is no catalog API we may use. `robots.txt` disallows `/api`, allows user-requested AI retrieval (`Claude-User`) on `/content`, and carries `Content-Signal: ai-train=no`. The owner knew this and chose to read the public pages anyway, under these rules:
   - read only `https://www.coupangplay.com/sitemap.xml` and `/content/<uuid>` pages, never an `/api` path;
   - at most one request per second;
-  - one full pass, then only URLs not yet cached.
-  The descriptions and cast are used as content features to place new movies. The sitemap may be stale, so movies added after it can be missing.
+  - one full pass, then only URLs not yet cached, plus a recheck of the 300 oldest-fetched cached pages per run (a 404/410 marks the title gone, a page without Movie JSON-LD marks it not a movie).
+  The catalog keeps only Coupang titles whose URL is in that day's sitemap, so departed titles drop out. The descriptions and cast are used as content features to place new movies. The sitemap may be stale, so movies added after it can be missing.
 - **MovieLens 25M**: GroupLens, non-commercial research licence, fine for this personal lab.
 
 Posters are loaded by the phone straight from JustWatch's and Coupang's image servers. Nothing is stored in this repository.
