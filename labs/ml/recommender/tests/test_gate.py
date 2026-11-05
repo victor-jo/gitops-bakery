@@ -83,3 +83,43 @@ def test_missing_couple_auc_in_new_raises_even_when_champion_lacks_it():
     del new["couple_auc"]
     with pytest.raises(KeyError):
         should_promote(new, champion, couple_holdout_size=10)
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf")])
+def test_non_finite_val_auc_rejects(bad):
+    ok, reason = should_promote(_new(val_auc=bad), CHAMPION, couple_holdout_size=0)
+    assert ok is False
+    assert reason == "val_auc is not finite"
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf")])
+def test_non_finite_precision_10_rejects(bad):
+    ok, reason = should_promote(_new(precision_10=bad), CHAMPION, couple_holdout_size=0)
+    assert ok is False
+    assert reason == "precision_10 is not finite"
+
+
+def test_non_finite_couple_auc_rejects_when_couple_rule_applies():
+    ok, reason = should_promote(_new(couple_auc=float("nan")), CHAMPION, couple_holdout_size=10)
+    assert ok is False
+    assert reason == "couple_auc is not finite"
+
+
+def test_non_finite_val_auc_rejects_without_champion():
+    ok, reason = should_promote(_new(val_auc=float("nan")), None, couple_holdout_size=0)
+    assert ok is False
+    assert reason == "val_auc is not finite"
+
+
+def test_non_finite_precision_10_rejects_without_champion():
+    ok, reason = should_promote(_new(precision_10=float("nan")), None, couple_holdout_size=0)
+    assert ok is False
+    assert reason == "precision_10 is not finite"
+
+
+def test_no_champion_missing_couple_auc_in_new_does_not_raise():
+    new = _new()
+    del new["couple_auc"]
+    ok, reason = should_promote(new, None, couple_holdout_size=10)
+    assert ok is True
+    assert reason == "no champion"

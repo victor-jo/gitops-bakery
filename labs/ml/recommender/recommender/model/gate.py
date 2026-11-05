@@ -1,4 +1,6 @@
 # Promotion gate deciding whether a newly trained model replaces the MLflow champion
+import math
+
 VAL_AUC_MAX_DROP = 0.005
 PRECISION_10_MAX_DROP = 0.01
 COUPLE_MIN_HOLDOUT = 10
@@ -10,7 +12,7 @@ def _dropped_beyond(name: str, champion_value: float, new_value: float, max_drop
     """Reason string when the metric fell by more than max_drop, otherwise None."""
     drop = champion_value - new_value
     if drop - max_drop > _EPS:
-        return f"{name} dropped by {drop:.4f} > {max_drop:g}"
+        return f"{name} dropped by {drop:.6f} > {max_drop:g}"
     return None
 
 
@@ -22,6 +24,11 @@ def should_promote(
     The couple rule needs both models to have a couple AUC. An older champion without one
     skips that rule, but a missing couple_auc in `new` raises KeyError once the holdout is large enough.
     """
+    # NaN or inf compares False against every threshold, so it must be rejected explicitly
+    for name in ("val_auc", "precision_10"):
+        if not math.isfinite(new[name]):
+            return False, f"{name} is not finite"
+
     if champion is None:
         return True, "no champion"
 
@@ -35,6 +42,8 @@ def should_promote(
 
     if couple_holdout_size >= COUPLE_MIN_HOLDOUT:
         new_couple = new["couple_auc"]
+        if not math.isfinite(new_couple):
+            return False, "couple_auc is not finite"
         if "couple_auc" in champion and new_couple < champion["couple_auc"]:
             return False, f"couple_auc {new_couple:.4f} < champion {champion['couple_auc']:.4f}"
 
