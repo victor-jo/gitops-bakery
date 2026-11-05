@@ -56,7 +56,7 @@ The container re-applies the Feast definitions at start-up, and reloads the cata
 
 The container reaches Garage and Valkey through two Mac-side port-forwards. `serving/tunnels.sh` (run by `run.sh`) keeps each one in a `while true; do kubectl port-forward ...; sleep 2; done` loop, so a dropped forward comes back within seconds. Logs and pid files are `/tmp/movie-rec-tunnel-<port>.{log,pid}`, and a second call does not start a duplicate. If a port already listens (for example from `labs/ml/feast/pf.sh`), it is left alone and is not supervised.
 
-**Picks show but 👍/👎 fails → run `serving/tunnels.sh`.** The list is served from memory, but every mark is written to Garage and pushed to Valkey, so a dead tunnel shows up first as a failing mark.
+**Picks show but 👍/👎 fails → run `serving/tunnels.sh`.** Picks fall back to the in-memory tastes when Valkey is unreachable, but every mark is written to Garage, so a dead tunnel shows up first as a failing mark (and as `taste of <viewer> comes from memory` warnings in the container log).
 
 ## Schedules
 
@@ -93,7 +93,7 @@ The page has four screens: choose a profile, pick favourite genres, mark posters
 
 Every mark is an event in `s3://recommender/feedback/events/`, one JSON object per mark, so the couple's state survives a restart or a rebuild. The same marks refold that person's taste vector in the service and push it to Feast (`viewer_taste`).
 
-Feast is a write-through mirror, not a source. The event log in Garage is authoritative: the service rebuilds both tastes from it at start-up and keeps them in memory. It pushes each viewer's taste to Feast's online store after every mark and materializes the movie features after each catalog reload, so other consumers can read them. Nothing in the app reads them back yet.
+Feast serves the tastes; the event log in Garage stays authoritative. At start-up the service rebuilds both tastes from the log and pushes them to Feast's online store before it serves. Each mark refolds that viewer's taste in the service and pushes it, and the weekend picks read every viewer's taste back from Feast (`viewer_taste:vector`) for scoring, so the next read returns the new vector. When the read fails, returns nothing, has the wrong length, or the viewer's last push has not landed yet, the service scores with its in-memory taste instead and logs one warning naming the viewer and the reason; a failed push is retried on the next request. Movie features stay in the in-memory catalog: Feast materializes them after each catalog reload for other consumers, and the app does not read them back.
 
 ## After an OrbStack restart
 
