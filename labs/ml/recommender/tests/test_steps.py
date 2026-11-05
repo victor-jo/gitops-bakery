@@ -180,7 +180,7 @@ def test_match_and_build_writes_the_catalog_and_its_two_feature_parquets(monkeyp
         "movie_key": ["a"], "title": ["A"], "services": [["nfx", "dnp", "cou"]], "genres": [["drama"]],
         "release_year": pd.array([2025], dtype="Int64"), "korean": [True], "new_this_week": [True],
         "poster_url": [None], "popularity_kr": [0.9], "movielens_id": pd.array([None], dtype="Int64"),
-        "description": ["d"], "actors": [["a"]]})
+        "description": ["d"], "actors": [["a"]], "review_rating": [0.7]})
     monkeypatch.setattr(steps, "ensure_movielens", lambda: None)
     monkeypatch.setattr(steps, "_exists", lambda key: False)
     monkeypatch.setattr(coupang, "current_movies", lambda pages, sitemap: pages)

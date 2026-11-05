@@ -169,3 +169,16 @@ def test_korean_movies_are_flagged_by_a_hangul_original_title():
     cp["original_title"] = ["화녀", None]
     out = build_catalog(jw, cp, NEW, LINKS, TODAY).set_index("movie_key")
     assert out.korean.to_dict() == {"tmdb:100": True, "tmdb:200": False, "tmdb:300": True, "cp:c2": False}
+
+
+def test_build_catalog_keeps_one_review_rating_and_drops_the_raw_scores():
+    jw = _jw([["j1", "100", "Alpha", 2020, ["drama"], "jw", None, "nfx", 1],
+              ["j2", "200", "Beta", 2021, ["drama"], "jw", None, "nfx", 2]])
+    jw["tmdb_score"], jw["imdb_score"], jw["imdb_votes"] = [8.0, 0.0], [8.5, None], [2000, None]
+    cp = _cp([["c1", "movie", "알파", 2020.0, ["drama"], "cp", [], None, 30, None, "100"],
+              ["c3", "movie", "오직쿠팡", float("nan"), ["horror"], "cp", [], None, 0, None, None]])
+    cp["rating"] = [4.5, None]
+    out = build_catalog(jw, cp, NEW, LINKS, TODAY).set_index("movie_key")
+    assert 0 < out.loc["tmdb:100", "review_rating"] < 1
+    assert out.loc[["tmdb:200", "cp:c3"], "review_rating"].isna().all()  # no score from any source
+    assert not {"imdb_score", "imdb_votes", "tmdb_score", "coupang_rating", "coupang_count"} & set(out.columns)

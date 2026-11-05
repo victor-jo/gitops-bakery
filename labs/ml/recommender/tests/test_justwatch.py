@@ -4,13 +4,14 @@ from datetime import date
 from recommender.catalog.justwatch import fetch_service, new_titles, search_title, search_tmdb_id
 
 
-def _node(oid, title, year, tmdb, score=1.0, genres=("drm",), poster=True):
+def _node(oid, title, year, tmdb, score=1.0, genres=("drm",), poster=True, imdb=None):
     return {"objectId": oid, "content": {
         "title": title, "originalTitle": title + "-o", "originalReleaseYear": year,
         "runtime": 100, "shortDescription": "d",
         "posterUrl": "/poster/%s/{profile}/x.{format}" % oid if poster else None, "genres": [{"shortName": g} for g in genres],
         "externalIds": {"imdbId": "tt" + oid, "tmdbId": tmdb},
-        "scoring": {"tmdbScore": score}}}
+        "scoring": {"tmdbScore": score, "imdbScore": imdb[0] if imdb else None,
+                    "imdbVotes": imdb[1] if imdb else None}}}
 
 
 # (min, max) -> pages of nodes; None -> the unfiltered popularity pass
@@ -42,6 +43,21 @@ def test_fetch_service_unions_slices_and_ranks():
     assert df.genres.iloc[0] == ["drama"]
     assert df.tmdb_id.iloc[3] is None
     assert df.poster_url.iloc[0] == "https://images.justwatch.com/poster/c/s332/x.webp"
+
+
+def test_fetch_service_keeps_the_review_scores():
+    data = {None: [[_node("z", "Z", 2001, "9", score=7.5, imdb=(8.1, 1200)), _node("y", "Y", 2002, "8")]]}
+
+    def post(query, variables):
+        assert "imdbScore imdbVotes" in query
+        pages = data.get((variables["min"], variables["max"]) if "min" in variables else None, [[]])
+        return {"data": {"popularTitles": {
+            "totalCount": 2, "pageInfo": {"hasNextPage": False, "endCursor": None},
+            "edges": [{"node": n} for n in pages[0]]}}}
+
+    df = fetch_service("nfx", post, years=[(2001, 2001)], pause=0)
+    assert df[["tmdb_score", "imdb_score", "imdb_votes"]].iloc[0].tolist() == [7.5, 8.1, 1200]
+    assert df.imdb_score.isna().iloc[1] and df.imdb_votes.isna().iloc[1]
 
 
 def test_fetch_service_poster_is_none_when_absent():

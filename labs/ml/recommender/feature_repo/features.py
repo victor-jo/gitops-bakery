@@ -42,6 +42,7 @@ movie_catalog = FeatureView(
         Field(name="poster_url", dtype=String),
         Field(name="description", dtype=String),
         Field(name="actors", dtype=Array(String)),
+        Field(name="review_rating", dtype=Float64),
     ],
     source=_movie_source("movie_catalog"),
 )

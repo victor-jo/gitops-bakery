@@ -21,7 +21,7 @@ Post = Callable[[str, dict], dict]
 
 _CONTENT = """content(country: $country, language: "ko") {
   title originalTitle originalReleaseYear runtime shortDescription posterUrl
-  genres { shortName } externalIds { imdbId tmdbId } scoring { tmdbScore } }"""
+  genres { shortName } externalIds { imdbId tmdbId } scoring { tmdbScore imdbScore imdbVotes } }"""
 
 _POPULAR = """query($country: Country!, $first: Int!, $after: String, $pkg: [String!]%s) {
   popularTitles(country: $country, first: $first, after: $after,
@@ -92,6 +92,7 @@ def _poster(path: str | None) -> str | None:
 def _row(node: dict, package: str) -> dict:
     c = node["content"]
     ids = c["externalIds"] or {}
+    score = c["scoring"] or {}
     return {
         "justwatch_id": node["objectId"], "tmdb_id": ids.get("tmdbId"), "imdb_id": ids.get("imdbId"),
         "title": c["title"], "original_title": c["originalTitle"],
@@ -99,7 +100,9 @@ def _row(node: dict, package: str) -> dict:
         "genres": from_justwatch([g["shortName"] for g in c["genres"]]),
         "description": c["shortDescription"] or "", "poster_url": _poster(c.get("posterUrl")),
         "service": package,
-        "_tmdb_score": (c["scoring"] or {}).get("tmdbScore") or 0.0,
+        # Review scores for the catalog's review rating; TMDB gives no vote count, and 0 means unrated
+        "tmdb_score": score.get("tmdbScore") or 0.0,
+        "imdb_score": score.get("imdbScore"), "imdb_votes": score.get("imdbVotes"),
     }
 
 
@@ -125,9 +128,9 @@ def fetch_service(package: str, post: Post, years: list[tuple[int, int]] | None 
         if oid not in ranked:
             ranked.append(oid)
     in_ranked = set(ranked)
-    rest = sorted((r for k, r in rows.items() if k not in in_ranked), key=lambda r: -r["_tmdb_score"])
+    rest = sorted((r for k, r in rows.items() if k not in in_ranked), key=lambda r: -r["tmdb_score"])
     ordered = [rows[k] for k in ranked] + rest
-    df = pd.DataFrame(ordered).drop(columns="_tmdb_score")
+    df = pd.DataFrame(ordered)
     df["popularity_rank"] = range(1, len(df) + 1)
     return df
 

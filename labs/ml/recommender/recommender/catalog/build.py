@@ -4,6 +4,8 @@ from datetime import date, timedelta
 
 import pandas as pd
 
+from recommender.catalog.rating import SOURCES, review_rating
+
 
 def _tmdb(value) -> str | None:
     """Normalize a tmdb id (str, int or float, possibly NaN) to a plain string without '.0'."""
@@ -101,6 +103,8 @@ def build_catalog(justwatch: pd.DataFrame, coupang: pd.DataFrame, new: pd.DataFr
             year = _year(first.get("release_year")) or _year(first.year_hint)
         day = added.get(key)
         tmdb = first.tmdb_id
+        jw_first = j.iloc[0] if len(j) else {}
+        cp_first = c.iloc[0] if len(c) else {}
         rows.append({
             "movie_key": key, "tmdb_id": tmdb, "movielens_id": ml.get(tmdb),
             "title": first.title, "release_year": year,
@@ -110,8 +114,14 @@ def build_catalog(justwatch: pd.DataFrame, coupang: pd.DataFrame, new: pd.DataFr
             "popularity_kr": float(max([*j["pop"], *c["pop"]])),
             "added_on": day, "new_this_week": day is not None and day >= week_ago,
             "korean": any(_is_korean(t) for t in [*j.get("original_title", []), *c.get("original_title", [])]),
+            # Raw review scores, combined below into review_rating and then dropped
+            "imdb_score": jw_first.get("imdb_score"), "imdb_votes": jw_first.get("imdb_votes"),
+            "tmdb_score": jw_first.get("tmdb_score"),
+            "coupang_rating": cp_first.get("rating"), "coupang_count": cp_first.get("rating_count"),
         })
     out = pd.DataFrame(rows)
+    out["review_rating"] = review_rating(out)
+    out = out.drop(columns=[col for score, votes, _, _ in SOURCES.values() for col in (score, votes) if col])
     for col in ("movielens_id", "release_year"):
         out[col] = out[col].astype("Int64")
     # Keep None (not NaN) for missing ids and dates.
