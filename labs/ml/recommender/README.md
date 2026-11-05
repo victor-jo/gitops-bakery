@@ -43,13 +43,15 @@ bash ../feast/pf.sh                                      # Garage on 3900, Valke
 FEAST_S3_ENDPOINT_URL=http://localhost:3900 .venv-rec/bin/python feast_config.py --apply
 # 4. Build: bentoml build + containerize for the host architecture -> movie-recommender:<bento tag>
 serving/build.sh
-# 5. Run: docker run on the kind network, published on 0.0.0.0:3100
+# 5. Tunnels: the container reaches Garage and Valkey through them; run.sh stops if either is down
+bash ../feast/pf.sh                                      # rerun it: a no-op when both ports already listen
+# 6. Run: docker run on the kind network, published on 0.0.0.0:3100
 serving/run.sh                                           # prints the phone URL
 ```
 
 `run.sh` reads the credentials from `kubeflow/kfp-s3` when it starts the container; they are never baked into the image. The container reaches the tunnels as `host.docker.internal`, and MLflow artifacts come through the MLflow server (`MLFLOW_ENABLE_PROXY_MULTIPART_DOWNLOAD=false`), because the presigned Garage URLs do not resolve outside the cluster.
 
-The service applies the Feast definitions again at start-up, with its own Garage address in the file sources, and reloads the catalog every 6 hours. A rebuild is needed only when the code changes. A new champion or catalog needs only a `docker restart movie-rec`, or a wait for the next reload.
+The container re-applies the Feast definitions at start-up, and reloads the catalog every 6 hours. The Feast registry's file-source endpoint is whatever the last process to apply wrote: `localhost:3900` after a Mac-side `feast_config.py --apply`, `host.docker.internal:3900` after the container starts. Each process applies before it materializes, so both work, but the registry shows only the last one. A rebuild is needed only when the code changes. A new champion or catalog needs only a `docker restart movie-rec`, or a wait for the next reload.
 
 ## Open it on the phone
 

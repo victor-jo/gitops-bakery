@@ -3,6 +3,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source ../env.sh
+# Without the tunnels the service never finishes starting, so fail fast instead of waiting on /readyz
+for p in 3900 16379; do lsof -nP -iTCP:$p -sTCP:LISTEN >/dev/null || { echo "tunnel $p down; run labs/ml/feast/pf.sh" >&2; exit 1; }; done
 key() { kubectl --context "$BAKERY_CONTEXT" -n kubeflow get secret kfp-s3 -o jsonpath="{.data.$1}" | base64 -d; }
 TAG=$(sed 's/^__tag__://' serving/.bento-tag)
 docker rm -f movie-rec >/dev/null 2>&1 || true
@@ -21,7 +23,18 @@ docker run -d --name movie-rec --network kind -p 0.0.0.0:3100:3000 \
 echo "started movie-rec; waiting for http://127.0.0.1:3100/readyz"
 # 127.0.0.1, not localhost: OrbStack also listens on ::1 for the mapped port but never answers there
 for _ in $(seq 1 120); do
-  curl -fs -m 2 127.0.0.1:3100/readyz >/dev/null 2>&1 && { echo "ready: http://$(ipconfig getifaddr en0):3100 (open on the phone, same Wi-Fi)"; exit 0; }
+  if curl -fs -m 2 127.0.0.1:3100/readyz >/dev/null 2>&1; then
+    IP=$(ipconfig getifaddr en0 || true)
+    if [ -n "$IP" ]; then
+      echo "ready: http://$IP:3100 (open on the phone, same Wi-Fi)"
+    else
+      echo "ready: http://127.0.0.1:3100 (en0 has no address, so there is no LAN URL for the phone; join the Wi-Fi and run: ipconfig getifaddr en0)"
+    fi
+    exit 0
+  fi
+  if [ "$(docker inspect -f '{{.State.Running}}' movie-rec 2>/dev/null)" != "true" ]; then
+    echo "movie-rec stopped while starting; last log lines:" >&2; docker logs --tail 20 movie-rec >&2 2>&1; exit 1
+  fi
   sleep 2
 done
 echo "not ready; see: docker logs movie-rec" >&2; exit 1
