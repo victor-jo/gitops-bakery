@@ -11,17 +11,18 @@ from recommender.genres import CANONICAL
 
 _GENRE_INDEX = {g: i for i, g in enumerate(CANONICAL)}
 _FIRST_DECADE, _LAST_DECADE = 1900, 2020
-_N_DECADES = (_LAST_DECADE - _FIRST_DECADE) // 10 + 2  # last slot is "unknown"
+N_DECADES = (_LAST_DECADE - _FIRST_DECADE) // 10 + 2  # last slot is "unknown"
 
 
-def _dense_features(catalog: pd.DataFrame) -> sp.csr_matrix:
+def genre_decade_features(catalog: pd.DataFrame) -> sp.csr_matrix:
+    """Genre multi-hot, then decade one-hot (1900s to 2020s, last column for an unknown year), per row."""
     n = len(catalog)
     genre = np.zeros((n, len(CANONICAL)), dtype=np.float32)
     for r, genres in enumerate(catalog["genres"]):
         for g in genres:
             if g in _GENRE_INDEX:
                 genre[r, _GENRE_INDEX[g]] = 1.0
-    decade = np.zeros((n, _N_DECADES), dtype=np.float32)
+    decade = np.zeros((n, N_DECADES), dtype=np.float32)
     for r, year in enumerate(catalog["release_year"]):
         if pd.isna(year):
             decade[r, -1] = 1.0
@@ -56,7 +57,7 @@ class ContentModel:
 
     def _features(self, catalog: pd.DataFrame) -> sp.csr_matrix:
         text = self.tfidf.transform(self.hasher.transform(_texts(catalog)))
-        return sp.hstack([_dense_features(catalog), text]).tocsr()
+        return sp.hstack([genre_decade_features(catalog), text]).tocsr()
 
     def place(self, catalog: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
         pred = self.ridge.predict(self._features(catalog))

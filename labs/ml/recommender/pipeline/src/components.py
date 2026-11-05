@@ -38,10 +38,10 @@ def prepare_movielens():
 
 
 @dsl.component(base_image=BASE, target_image=IMAGE)
-def train(epochs: int, sample_users: int, dim: int, holdout: Output[Dataset]) -> str:
+def train(epochs: int, sample_users: int, dim: int, model_type: str, holdout: Output[Dataset]) -> str:
     from steps import train as run
 
-    return run(epochs, sample_users, dim, holdout.path)
+    return run(epochs, sample_users, dim, holdout.path, model_type)
 
 
 @dsl.component(base_image=BASE, target_image=IMAGE)

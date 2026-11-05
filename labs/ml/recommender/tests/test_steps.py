@@ -147,3 +147,81 @@ def test_place_catalog_skips_without_a_champion(monkeypatch, capsys):
     monkeypatch.setattr(steps.s3, "write_parquet", lambda df, key: pytest.fail("must not write features"))
     assert steps.place_catalog() == 0
     assert "skipping placement" in capsys.readouterr().out
+
+
+def _fake_training(monkeypatch):
+    """A tiny bucket and a fake MLflow for steps.train; returns what MLflow and mf.train were given."""
+    import types
+
+    from recommender.model import mf
+
+    users, movies = np.repeat(np.arange(1, 21), 4), np.tile([10, 20, 30, 40], 20)
+    ratings = pd.DataFrame({"userId": users, "movieId": movies,
+                            "rating": np.where((users + movies // 10) % 2 == 0, 5.0, 1.0)})
+    ml_movies = pd.DataFrame({"movieId": [10, 20, 30, 40],
+                              "title": ["A (1995)", "B (2003)", "C (2010)", "D"],
+                              "genres": ["Comedy", "Thriller", "Comedy|Romance", "Horror"]})
+    catalog = pd.DataFrame({
+        "movie_key": ["a", "b", "x"], "movielens_id": pd.array([10, 20, None], dtype="Int64"),
+        "title": ["A", "B", "X"], "release_year": pd.array([1995, 2003, 2026], dtype="Int64"),
+        "genres": [["comedy"], ["thriller"], ["drama"]], "description": ["", "", ""],
+        "actors": [[], [], []], "korean": [False, True, True]})
+    tables = {steps.MOVIELENS["ratings"]: ratings, steps.MOVIELENS["movies"]: ml_movies, steps.CATALOG: catalog}
+    monkeypatch.setattr(steps, "_exists", lambda key: True)
+    monkeypatch.setattr(steps, "_events", lambda: [])
+    monkeypatch.setattr(steps.s3, "read_parquet", lambda key: tables[key].copy())
+
+    seen = {}
+    real_train = mf.train
+
+    def spy_train(*args, **kwargs):
+        seen["item_features"] = kwargs.get("item_features")
+        return real_train(*args, **kwargs)
+
+    monkeypatch.setattr(mf, "train", spy_train)
+
+    class _Run:
+        info = types.SimpleNamespace(run_id="r1")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def log_artifacts(path, name):
+        with np.load(f"{path}/arrays.npz") as z:
+            seen["arrays"] = {k: z[k] for k in z.files}
+
+    monkeypatch.setitem(sys.modules, "mlflow", types.SimpleNamespace(
+        set_experiment=lambda name: seen.update(experiment=name), start_run=_Run,
+        log_params=lambda params: seen.update(params=params), log_metric=lambda *a: None,
+        log_artifacts=log_artifacts))
+    return seen
+
+
+@pytest.mark.parametrize("model_type", ["mf", "hybrid"])
+def test_train_logs_the_model_type_and_keeps_the_mf_array_layout(tmp_path, monkeypatch, model_type):
+    seen = _fake_training(monkeypatch)
+    assert steps.train(1, 0, 4, str(tmp_path / "holdout.parquet"), model_type) == "r1"
+    assert seen["params"]["model_type"] == model_type
+    # Same keys and shapes either way, so the gate, fold-in and placement read a hybrid run unchanged
+    assert seen["arrays"]["item_vecs"].shape == (4, 4) and seen["arrays"]["item_bias"].shape == (4,)
+    assert seen["arrays"]["user_vecs"].shape == (22, 4)
+    if model_type == "mf":
+        assert seen["item_features"] is None
+    else:
+        assert seen["item_features"].shape[0] == 4
+        assert seen["item_features"][:, -2].tolist() == [0.0, 1.0, 0.0, 0.0]  # movie 20 is Korean
+
+
+def test_train_default_is_the_plain_mf(tmp_path, monkeypatch):
+    seen = _fake_training(monkeypatch)
+    steps.train(1, 0, 4, str(tmp_path / "holdout.parquet"))
+    assert seen["params"]["model_type"] == "mf" and seen["item_features"] is None
+
+
+def test_unknown_model_type_is_refused_before_any_work(monkeypatch):
+    monkeypatch.setattr(steps, "_exists", lambda key: pytest.fail("must not touch the bucket"))
+    with pytest.raises(ValueError, match="model_type"):
+        steps.train(1, 0, 4, "unused", "hybird")

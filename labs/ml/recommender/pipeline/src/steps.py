@@ -36,6 +36,8 @@ MOVIELENS = {name: f"movielens/{name}.parquet" for name in ("ratings", "movies",
 # Searches between two writes of the Coupang tmdb match cache, so a crash loses little work
 MATCH_FLUSH = 100
 TOP_K = 10
+# "mf" learns from ids only; "hybrid" adds genres, decade, Korean flag and rating count to each item
+MODEL_TYPES = ("mf", "hybrid")
 
 
 def _today() -> date:
@@ -185,13 +187,15 @@ def _sample(ratings: pd.DataFrame, sample_users: int) -> pd.DataFrame:
     return ratings[ratings["userId"].isin(users)].reset_index(drop=True)
 
 
-def train(epochs: int, sample_users: int, dim: int, holdout_path: str) -> str:
+def train(epochs: int, sample_users: int, dim: int, holdout_path: str, model_type: str = "mf") -> str:
     """Train the MF on MovieLens plus the couple, fit the content model and log both to a new MLflow run."""
     import mlflow
 
     from recommender.model import data, mf
     from recommender.model.content import fit_content_model
 
+    if model_type not in MODEL_TYPES:
+        raise ValueError(f"model_type must be one of {MODEL_TYPES}, got {model_type!r}")
     if not _exists(CATALOG):
         raise RuntimeError(f"s3://{BUCKET}/{CATALOG} does not exist yet; run the movie-catalog pipeline first")
     started = time.time()
@@ -210,7 +214,12 @@ def train(epochs: int, sample_users: int, dim: int, holdout_path: str) -> str:
     n_users, n_items = max(user_index.values()) + 1, len(item_index)
     print(f"train: {len(train_rows)} rows, {n_users} users, {n_items} items, couple rows {len(couple)}")
 
-    model = mf.train(train_rows, n_users, n_items, dim=dim, epochs=epochs)
+    features = None
+    if model_type == "hybrid":
+        from recommender.model.item_features import item_features
+
+        features = item_features(item_index, s3.read_parquet(MOVIELENS["movies"]), catalog, train_rows)
+    model = mf.train(train_rows, n_users, n_items, dim=dim, epochs=epochs, item_features=features)
     arrays = mf.export(model)
     content = fit_content_model(catalog, arrays["item_vecs"], arrays["item_bias"], item_index)
     train_s = time.time() - started
@@ -221,8 +230,8 @@ def train(epochs: int, sample_users: int, dim: int, holdout_path: str) -> str:
     mlflow.set_experiment(MODEL_NAME)
     with mlflow.start_run() as run, tempfile.TemporaryDirectory() as tmp:
         mlflow.log_params({"epochs": epochs, "sample_users": sample_users, "dim": dim,
-                           "train_rows": len(train_rows), "n_users": n_users, "n_items": n_items,
-                           "couple_rows": len(couple)})
+                           "model_type": model_type, "train_rows": len(train_rows), "n_users": n_users,
+                           "n_items": n_items, "couple_rows": len(couple)})
         mlflow.log_metric("train_seconds", train_s)
         np.savez(os.path.join(tmp, "arrays.npz"), **arrays, user_ids=user_ids,
                  user_index=json.dumps(user_index), item_index=json.dumps(item_index))
