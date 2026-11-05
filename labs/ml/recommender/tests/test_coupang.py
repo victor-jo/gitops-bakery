@@ -77,3 +77,35 @@ def test_crawl_refuses_api_paths():
         crawl([BASE + "a", "https://www.coupangplay.com/api/v1/x"],
               lambda u: calls.append(u) or (200, MOVIE), pd.DataFrame(), sleep=lambda s: None)
     assert calls == []
+
+
+def test_crawl_checkpoints_before_an_error_escapes():
+    urls = [BASE + "a", BASE + "b", BASE + "c"]
+    saved = []
+
+    def fetch(u):
+        if u.endswith("c"):
+            raise RuntimeError("boom")
+        return 200, MOVIE
+
+    with pytest.raises(RuntimeError):
+        crawl(urls, fetch, pd.DataFrame(), sleep=lambda s: None, on_batch=saved.append)
+    assert len(saved[-1]) == 2
+
+
+def test_crawl_calls_on_batch_every_batch_size_rows():
+    saved = []
+    crawl([BASE + str(i) for i in range(5)], lambda u: (200, MOVIE), pd.DataFrame(),
+          sleep=lambda s: None, on_batch=lambda df: saved.append(len(df)), batch_size=2)
+    assert saved == [2, 4]
+
+
+def test_crawl_stops_on_429_and_after_repeated_failures_and_maps_410_to_gone():
+    urls = [BASE + str(i) for i in range(10)]
+    calls = []
+    out = crawl(urls, lambda u: calls.append(u) or ((410, "") if len(calls) == 1 else (429, "")),
+                pd.DataFrame(), sleep=lambda s: None)
+    assert list(out["status"]) == ["gone"] and len(calls) == 2
+    calls.clear()
+    out = crawl(urls, lambda u: calls.append(u) or (503, ""), pd.DataFrame(), sleep=lambda s: None)
+    assert len(calls) == 5 and len(out) == 0

@@ -14,6 +14,8 @@ from recommender.genres import from_coupang
 
 USER_AGENT = "gitops-bakery-movie-rec (personal lab)"
 TIMEOUT = 20
+# Consecutive non-200/404 responses that end a pass.
+MAX_FAILURES = 5
 # When False, datePublished is not an "added to Coupang" date and added_on stays None.
 COUPANG_ADDED_ON_IS_RELIABLE = True
 
@@ -82,32 +84,60 @@ def default_fetch(url: str) -> tuple[int, str]:
             return r.status, r.read().decode("utf-8")
     except urllib.error.HTTPError as e:
         return e.code, ""
+    except (OSError, UnicodeDecodeError):
+        return 0, ""  # network failure: treated as transient by crawl
 
 
 def crawl(urls: list[str], fetch: Callable[[str], tuple[int, str]] = default_fetch,
           cache: pd.DataFrame | None = None, pause: float = 1.0,
-          sleep: Callable[[float], None] = time.sleep) -> pd.DataFrame:
-    """Fetch only URLs missing from the cache, pausing between requests; return cache plus new rows."""
+          sleep: Callable[[float], None] = time.sleep,
+          on_batch: Callable[[pd.DataFrame], None] | None = None,
+          batch_size: int = 200) -> pd.DataFrame:
+    """Fetch only URLs missing from the cache, pausing between requests; return cache plus new rows.
+
+    Stops early (returning the partial frame) on 429/403 or after 5 consecutive transient failures.
+    on_batch receives the cache-so-far every batch_size new rows and once more if an error escapes.
+    """
     if any("/api" in u for u in urls):
         raise ValueError("refusing to request an /api path")
     cache = pd.DataFrame() if cache is None else cache
     seen = set(cache["url"]) if "url" in cache else set()
-    rows, first = [], True
-    for url in dict.fromkeys(urls):
-        if url in seen:
-            continue
-        if not first:
-            sleep(pause)
-        first = False
-        code, html = fetch(url)
-        if code == 404:
-            row = {"status": "gone"}
-        elif code != 200:
-            continue  # transient failure: leave uncached so the next pass retries it
-        elif (page := parse_page(html, url)) is None:
-            row = {"status": "not_movie"}
-        else:
-            row = {"status": "movie", **page}
-        rows.append({"url": url, "coupang_id": url.rsplit("/", 1)[-1], **row,
-                     "fetched_at": datetime.now(timezone.utc)})
-    return pd.concat([cache, pd.DataFrame(rows)], ignore_index=True) if rows else cache
+    rows, first, failures, flushed = [], True, 0, 0
+
+    def so_far() -> pd.DataFrame:
+        return pd.concat([cache, pd.DataFrame(rows)], ignore_index=True) if rows else cache
+
+    try:
+        for url in dict.fromkeys(urls):
+            if url in seen:
+                continue
+            if not first:
+                sleep(pause)
+            first = False
+            code, html = fetch(url)
+            if code in (429, 403):
+                print(f"coupang crawl stopped: HTTP {code} (throttled or blocked)")
+                break
+            if code in (404, 410):
+                row = {"status": "gone"}
+            elif code != 200:
+                failures += 1  # transient: leave uncached so the next pass retries it
+                if failures >= MAX_FAILURES:
+                    print(f"coupang crawl stopped: {failures} consecutive failures (last HTTP {code})")
+                    break
+                continue
+            elif (page := parse_page(html, url)) is None:
+                row = {"status": "not_movie"}
+            else:
+                row = {"status": "movie", **page}
+            failures = 0
+            rows.append({"url": url, "coupang_id": url.rsplit("/", 1)[-1], **row,
+                         "fetched_at": datetime.now(timezone.utc)})
+            if on_batch and len(rows) - flushed >= batch_size:
+                on_batch(so_far())
+                flushed = len(rows)
+    except BaseException:
+        if on_batch and len(rows) > flushed:
+            on_batch(so_far())
+        raise
+    return so_far()
