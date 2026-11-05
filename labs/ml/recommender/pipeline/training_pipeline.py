@@ -1,4 +1,4 @@
-# Training pipeline: MovieLens 25M plus the couple's marks -> MF and content model -> gate -> champion features
+# Training pipeline: MovieLens 25M plus the couple's marks -> MF and content model -> gate -> champion embedding features
 import sys
 from pathlib import Path
 

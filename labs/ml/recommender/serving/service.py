@@ -19,13 +19,12 @@ import numpy as np
 import pandas as pd
 from fastapi import FastAPI
 
-from recommender import s3
+from recommender import movie_features, s3
 from recommender.config import ALIAS, BUCKET, MODEL_NAME
 from recommender.core.state import Event
 from serving.api import create_app
 
 ROOT = Path(__file__).resolve().parent.parent
-FEATURES = "features/movies.parquet"
 FEEDBACK = "feedback/events/"
 REFRESH_SECONDS = 6 * 3600
 
@@ -77,7 +76,7 @@ def feature_store(settings: Settings, repo_dir: Path):
     spec = importlib.util.spec_from_file_location("features", repo_dir / "features.py")
     defs = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(defs)  # reads FEAST_S3_ENDPOINT_URL, so the env must be set before this
-    store.apply([defs.movie, defs.viewer, defs.movie_features, defs.viewer_taste])
+    store.apply(defs.DEFINITIONS)
     return store
 
 
@@ -92,11 +91,16 @@ class LiveStore:
         self.reload()
 
     def reload(self) -> None:
-        """Load the placed catalog with the champion's global bias, then materialize the movie features."""
-        catalog, gb = s3.read_parquet(FEATURES), champion_global_bias()
+        """Load the placed catalog with the champion's global bias, then materialize the movie feature views.
+
+        While only the legacy features/movies.parquet exists there is no view behind it to materialize.
+        """
+        (catalog, views), gb = movie_features.load(), champion_global_bias()
         self._snapshot = (catalog, gb)  # one assignment, so readers never see a mixed pair
-        self.feast.materialize_incremental(end_date=datetime.now(timezone.utc), feature_views=["movie_features"])
-        log.info("catalog loaded: %d movies, global bias %.4f", len(catalog), gb)
+        if views:
+            self.feast.materialize_incremental(end_date=datetime.now(timezone.utc), feature_views=views)
+        log.info("catalog loaded: %d movies, global bias %.4f, materialized %s", len(catalog), gb,
+                 ", ".join(views) or "nothing (legacy parquet)")
 
     def catalog(self) -> pd.DataFrame:
         return self._snapshot[0]

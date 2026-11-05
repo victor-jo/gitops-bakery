@@ -59,10 +59,11 @@ def apply() -> None:
         spec = importlib.util.spec_from_file_location("features", Path(tmp) / "features.py")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        store.apply([module.movie, module.viewer, module.movie_features, module.viewer_taste])
+        store.apply(module.DEFINITIONS)
         print(f"applied: {len(store.list_entities())} entities, {len(store.list_feature_views())} feature views")
-        store.materialize_incremental(end_date=datetime.now(timezone.utc), feature_views=["movie_features"])
-        print("materialized: movie_features")
+        views = [v.name for v in module.MOVIE_VIEWS]
+        store.materialize_incremental(end_date=datetime.now(timezone.utc), feature_views=views)
+        print(f"materialized: {', '.join(views)}")
 
 
 if __name__ == "__main__":

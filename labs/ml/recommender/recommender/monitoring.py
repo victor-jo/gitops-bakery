@@ -196,12 +196,12 @@ def run(evidently_url: str) -> dict[str, pd.DataFrame]:
     import mlflow
     from mlflow import MlflowClient
 
-    from recommender import s3
+    from recommender import movie_features, s3
     from recommender.config import ALIAS, MODEL_NAME
 
     events = [Event.from_json(s3.client().get_object(Bucket="recommender", Key=k)["Body"].read().decode())
               for k in s3.list_keys("feedback/events/") if k.endswith(".json")]
-    features = s3.read_parquet("features/movies.parquet")
+    features, _ = movie_features.load()
     version = MlflowClient().get_model_version_by_alias(MODEL_NAME, ALIAS)
     with tempfile.TemporaryDirectory() as tmp:
         path = mlflow.artifacts.download_artifacts(f"runs:/{version.run_id}/arrays/arrays.npz", dst_path=tmp)

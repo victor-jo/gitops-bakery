@@ -1,6 +1,7 @@
-# Tests for the Feast repository: the generated config and that the feature definitions apply to a local store
+# Tests for the Feast repository: the generated config, and that the feature definitions apply and match their writers
 import importlib.util
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from feast import FeatureStore, FileSource
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import feast_config  # noqa: E402
+from recommender import movie_features  # noqa: E402
 
 
 def _definitions():
@@ -45,18 +47,43 @@ def test_write_config_can_swap_the_valkey_host(tmp_path):
     assert conn == "host.docker.internal:16379,db=2,password=x"
 
 
-def test_definitions_apply_to_a_local_registry_and_sqlite_online_store(tmp_path, monkeypatch):
+def _apply_locally(tmp_path, monkeypatch, features):
     # Apply would otherwise open the s3:// parquet files to validate them, and this test has no network
     monkeypatch.setattr(FileSource, "validate", lambda self, config: None)
-    features = _definitions()
     (tmp_path / "feature_store.yaml").write_text(yaml.safe_dump({
         "project": "movie_recommender", "registry": str(tmp_path / "registry.db"), "provider": "local",
         "online_store": {"type": "sqlite", "path": str(tmp_path / "online.db")},
         "offline_store": {"type": "file"}, "entity_key_serialization_version": 3,
     }))
     store = FeatureStore(repo_path=str(tmp_path))
-    store.apply([features.movie, features.viewer, features.movie_features, features.viewer_taste])
-    assert {v.name for v in store.list_feature_views()} == {"movie_features", "viewer_taste"}
-    movie_fields = {f.name for f in store.get_feature_view("movie_features").features}
-    assert movie_fields == {"title", "services", "genres", "popularity_kr", "new_this_week", "vector", "bias", "poster_url"}
-    assert {f.name for f in store.get_feature_view("viewer_taste").features} == {"vector", "updated_at"}
+    store.apply(features.DEFINITIONS)
+    return store
+
+
+def test_definitions_apply_to_a_local_registry_and_sqlite_online_store(tmp_path, monkeypatch):
+    store = _apply_locally(tmp_path, monkeypatch, _definitions())
+    assert {v.name for v in store.list_feature_views()} == {
+        "movie_catalog", "movie_popularity", "movie_embedding", "viewer_taste"}
+    fields = {v.name: {f.name for f in v.features} for v in store.list_feature_views()}
+    assert fields["movie_catalog"] == {"title", "services", "genres", "release_year", "korean", "new_this_week",
+                                       "poster_url"}
+    assert fields["movie_popularity"] == {"popularity_kr"}
+    assert fields["movie_embedding"] == {"vector", "bias", "model_version"}
+    assert fields["viewer_taste"] == {"vector", "updated_at"}
+
+
+def test_each_movie_view_reads_the_parquet_its_writer_fills_with_the_same_columns():
+    features = _definitions()
+    for view in features.MOVIE_VIEWS:
+        assert view.batch_source.path == f"s3://recommender/{movie_features.key(view.name)}"
+        assert view.batch_source.timestamp_field == "event_timestamp"
+        assert [f.name for f in view.features] == movie_features.COLUMNS[view.name]
+    assert [v.name for v in features.MOVIE_VIEWS] == list(movie_features.COLUMNS)
+
+
+def test_movie_view_ttls_follow_how_often_each_parquet_is_rewritten():
+    features = _definitions()
+    ttl = {v.name: v.ttl for v in features.MOVIE_VIEWS}
+    # Popularity is daily and expires first; the champion's placement holds until it is replaced
+    assert ttl["movie_popularity"] < ttl["movie_catalog"] < ttl["movie_embedding"]
+    assert ttl["movie_popularity"] >= timedelta(days=1)

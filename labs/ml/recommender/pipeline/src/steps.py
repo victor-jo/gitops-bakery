@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
 
-from recommender import s3
+from recommender import movie_features, s3
 from recommender.config import ALIAS, BUCKET, MODEL_NAME
 
 KST = timezone(timedelta(hours=9))
@@ -28,7 +28,6 @@ COUPANG_MATCHES = "catalog/coupang/tmdb_matches.json"
 COUPANG_SITEMAP = "catalog/coupang/sitemap_urls.json"
 SITEMAP = "https://www.coupangplay.com/sitemap.xml"
 CATALOG = "catalog/movies.parquet"
-FEATURES = "features/movies.parquet"
 FEEDBACK = "feedback/events/"
 
 MOVIELENS_ZIP = "https://files.grouplens.org/datasets/movielens/ml-25m.zip"
@@ -117,7 +116,7 @@ def ensure_movielens() -> None:
 
 
 def match_and_build() -> int:
-    """Match Coupang titles to tmdb ids, merge the three services and write today's catalog."""
+    """Match Coupang titles to tmdb ids, merge the three services, write today's catalog and its feature parquets."""
     from recommender.catalog import justwatch as jw
     from recommender.catalog.build import build_catalog, match_coupang
     from recommender.catalog.coupang import current_movies
@@ -153,6 +152,8 @@ def match_and_build() -> int:
     check_services(catalog, s3.read_parquet(CATALOG) if _exists(CATALOG) else None)
     s3.write_parquet(catalog, CATALOG)
     s3.write_parquet(catalog, f"catalog/history/{today.isoformat()}.parquet")
+    for key, frame in movie_features.catalog_frames(catalog, pd.Timestamp.now(tz="UTC")).items():
+        s3.write_parquet(frame, key)
     print(f"catalog: {len(catalog)} movies, {int(catalog['movielens_id'].notna().sum())} with MovieLens ids")
     return len(catalog)
 
@@ -385,33 +386,38 @@ def evaluate_and_gate(run_id: str, holdout_path: str) -> str:
     return reason
 
 
-def _has_champion() -> bool:
+def _champion_version() -> str | None:
+    """The registered version the champion alias points at, or None when there is no champion yet."""
     from mlflow import MlflowClient
 
-    models = MlflowClient().search_registered_models(filter_string=f"name='{MODEL_NAME}'")
-    return bool(models) and ALIAS in models[0].aliases
+    client = MlflowClient()
+    models = client.search_registered_models(filter_string=f"name='{MODEL_NAME}'")
+    if not models or ALIAS not in models[0].aliases:
+        return None
+    return str(client.get_model_version_by_alias(MODEL_NAME, ALIAS).version)
 
 
 def place_catalog() -> int:
-    """Give every catalog movie the champion's vector and bias and write the feature parquet.
+    """Give every catalog movie the champion's vector and bias and write the embedding parquet.
 
-    The catalog pipeline runs this daily as well, so a new catalog reaches the service without retraining.
+    Only the training run writes it; the catalog run writes the catalog and popularity parquets itself.
     """
     import mlflow
 
-    if not _has_champion():
+    version = _champion_version()
+    if version is None:
         print(f"features: no {MODEL_NAME}@{ALIAS} yet; skipping placement until the training pipeline promotes one")
         return 0
     catalog = s3.read_parquet(CATALOG)
     with tempfile.TemporaryDirectory() as tmp:
-        local = mlflow.artifacts.download_artifacts(f"models:/{MODEL_NAME}@{ALIAS}", dst_path=tmp)
+        # The version, not the alias, so the vectors and their model_version always match
+        local = mlflow.artifacts.download_artifacts(f"models:/{MODEL_NAME}/{version}", dst_path=tmp)
         with open(os.path.join(local, "artifacts", "content.pkl"), "rb") as f:
             content = pickle.load(f)
     vecs, bias = content.place(catalog)
-    # Feast's file source needs a timestamp column; every row shares the time this placement ran
-    features = catalog.assign(vector=list(vecs), bias=bias.astype(float), event_timestamp=pd.Timestamp.now(tz="UTC"))
-    s3.write_parquet(features, FEATURES)
-    print(f"features: {len(features)} movies, vector dim {vecs.shape[1]}")
+    features = movie_features.embedding_frame(catalog, vecs, bias, version, pd.Timestamp.now(tz="UTC"))
+    s3.write_parquet(features, movie_features.key(movie_features.EMBEDDING))
+    print(f"features: {len(features)} movies placed by v{version}, vector dim {vecs.shape[1]}")
     return len(features)
 
 
