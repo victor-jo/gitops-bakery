@@ -3,6 +3,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 from feast import FeatureStore, FileSource
 
@@ -25,6 +26,23 @@ def test_write_config_moves_the_online_store_to_db_2(tmp_path):
     assert config["online_store"]["type"] == "redis"
     assert config["online_store"]["connection_string"] == "localhost:16379,db=2,password=x"
     assert config["registry"] == "s3://recommender/feast/registry.db"
+
+
+def test_write_config_rejects_a_connection_without_the_db_1_token(tmp_path):
+    with pytest.raises(ValueError):
+        feast_config.write_config(tmp_path, "localhost:16379,db=2,password=x")
+
+
+def test_write_config_only_replaces_the_exact_db_1_token(tmp_path):
+    path = feast_config.write_config(tmp_path, "localhost:16379,db=1,password=db=1x,prefix=db=10")
+    conn = yaml.safe_load(path.read_text())["online_store"]["connection_string"]
+    assert conn == "localhost:16379,db=2,password=db=1x,prefix=db=10"
+
+
+def test_write_config_can_swap_the_valkey_host(tmp_path):
+    path = feast_config.write_config(tmp_path, "localhost:16379,db=1,password=x", valkey_host="host.docker.internal:16379")
+    conn = yaml.safe_load(path.read_text())["online_store"]["connection_string"]
+    assert conn == "host.docker.internal:16379,db=2,password=x"
 
 
 def test_definitions_apply_to_a_local_registry_and_sqlite_online_store(tmp_path, monkeypatch):

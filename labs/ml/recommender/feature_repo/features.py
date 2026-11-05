@@ -1,4 +1,8 @@
 # Feast entities, feature views and the push source for the movie recommender
+"""File-source endpoints are read from FEAST_S3_ENDPOINT_URL at apply time and stored in the registry.
+
+A process that reaches Garage at a different address must re-apply with its own env before materializing.
+"""
 import os
 from datetime import timedelta
 
