@@ -84,6 +84,7 @@ Checked first: Korean popularity was already even between services (2026 release
 ## 2026-11-05 — Korean films first
 
 - A movie is Korean when its original title is written in Hangul (JustWatch `originalTitle`; for Coupang titles, the original title of their JustWatch match, now kept in the match cache).
-- Picks: `KOREAN_BONUS = 0.1` added to the ranking score (the veto still uses raw probabilities).
+- Picks: `KOREAN_BONUS = 0.2` added to the ranking score (the veto still uses raw probabilities).
 - "Mark what you've seen": within the same release year, Korean films come first.
 - Unmatched Coupang titles have no original title, so they are never flagged Korean even when they are.
+- Tuned on the real marks with the 9,651-movie catalog (1,082 Korean): 0.1 gave 2 Korean films in ten, 0.2 gave 7 (올드보이, 파묘, 차라리 죽여, 살인자 리포트, …) with 쇼생크 탈출 and one Disney+ pair kept, 0.3 gave 10 of 10. Set to 0.2.
