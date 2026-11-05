@@ -5,7 +5,7 @@ A movie recommender for two people, `me` (나) and `wife` (아내), built on the
 | Piece | Where |
 |---|---|
 | Catalog and training pipelines (KFP) | `pipeline/`, image `kfp/recommender-pipeline:0.1.0` (`$REC_IMAGE`) |
-| Catalog, features, feedback events | Garage bucket `recommender` (`catalog/`, `features/movies.parquet`, `feedback/events/`) |
+| Catalog, features, feedback events | Garage bucket `recommender` (`catalog/`, `features/movie_{catalog,popularity,embedding}.parquet`, `feedback/events/`) |
 | Model | MLflow experiment and registered model `movie-recommender`, alias `champion` |
 | Features | Feast project `movie_recommender`, registry `s3://recommender/feast/registry.db`, online store Valkey `db=2` |
 | Service and phone UI | BentoML `serving/` + `web/`, container `movie-rec`, port 3100 on the Mac |
@@ -33,11 +33,11 @@ export AWS_ACCESS_KEY_ID="$(key AWS_ACCESS_KEY_ID)" AWS_SECRET_ACCESS_KEY="$(key
 
 ```bash
 cd labs/ml/recommender
-# 1. Catalog: JustWatch (Netflix, Disney+) and Coupang Play -> catalog/ in Garage, then features/movies.parquet
-#    placed with the current champion (skipped before the first training run).
+# 1. Catalog: JustWatch (Netflix, Disney+) and Coupang Play -> catalog/ in Garage, then
+#    features/movie_catalog.parquet and features/movie_popularity.parquet.
 #    The first full Coupang pass takes hours at one page per second; --max-pages caps it for a quick run.
 .venv-rec/bin/python pipeline/run.py catalog
-# 2. Training: MovieLens + catalog -> MLflow run, gate, champion, features/movies.parquet
+# 2. Training: MovieLens + catalog -> MLflow run, gate, champion, features/movie_embedding.parquet
 .venv-rec/bin/python pipeline/run.py training
 # Monitoring (any time): joint thumbs-up rate, genre drift and taste shift -> Evidently project movie-recommender
 .venv-rec/bin/python pipeline/run.py monitoring
@@ -52,7 +52,29 @@ serving/run.sh                                           # prints the phone URL
 
 `run.sh` reads the credentials from `kubeflow/kfp-s3` when it starts the container; they are never baked into the image. The container reaches the tunnels as `host.docker.internal`, and MLflow artifacts come through the MLflow server (`MLFLOW_ENABLE_PROXY_MULTIPART_DOWNLOAD=false`), because the presigned Garage URLs do not resolve outside the cluster.
 
-The container re-applies the Feast definitions at start-up, and reloads the catalog every 6 hours. The Feast registry's file-source endpoint is whatever the last process to apply wrote: `localhost:3900` after a Mac-side `feast_config.py --apply`, `host.docker.internal:3900` after the container starts. Each process applies before it materializes, so both work, but the registry shows only the last one. A rebuild is needed only when the code changes. The daily catalog and training runs both rewrite `features/movies.parquet`, so a new catalog or champion needs only a `docker restart movie-rec`, or a wait for the next reload.
+The container re-applies the Feast definitions at start-up, and reloads the catalog every 6 hours. The Feast registry's file-source endpoint is whatever the last process to apply wrote: `localhost:3900` after a Mac-side `feast_config.py --apply`, `host.docker.internal:3900` after the container starts. Each process applies before it materializes, so both work, but the registry shows only the last one. A rebuild is needed only when the code changes. The daily catalog run rewrites the catalog and popularity parquets and the daily training run rewrites the embedding parquet, so a new catalog or champion needs only a `docker restart movie-rec`, or a wait for the next reload.
+
+## Movie features
+
+The movie features are split by who writes them and how often. Each Feast feature view has its own parquet under `s3://recommender/features/`, and every row carries the `event_timestamp` of the write. The views are defined in `feature_repo/features.py` and the writers and the reader in `recommender/movie_features.py`.
+
+| Feature view | Parquet | Written by | Fields | TTL |
+|---|---|---|---|---|
+| `movie_catalog` | `features/movie_catalog.parquet` | catalog run (`match_and_build`), daily | `title`, `services`, `genres`, `release_year`, `korean`, `new_this_week`, `poster_url` | 7 days |
+| `movie_popularity` | `features/movie_popularity.parquet` | catalog run (`match_and_build`), daily | `popularity_kr` | 2 days |
+| `movie_embedding` | `features/movie_embedding.parquet` | training run (`place_catalog`) | `vector`, `bias`, `model_version` (the champion's registered version) | 3650 days |
+
+The service and the monitoring report join the three on `movie_key` in catalog order. A movie the champion has not placed yet has no vector, so it is left out until the next training run places it. A placed movie that has left the catalog drops out with the catalog run.
+
+The catalog run no longer places movies, so a new title appears in the picks only after the next training run.
+
+**Upgrading from the single `features/movies.parquet`.** Until all three parquets exist, the service and the monitoring report read the old `features/movies.parquet` as before, and the service materializes nothing. Run the pipelines once in this order, then restart the service or wait for its next reload:
+
+1. `pipeline/run.py catalog` writes the catalog and popularity parquets.
+2. `pipeline/run.py training` writes the embedding parquet.
+3. `feast_config.py --apply` (or a service restart) applies and materializes the three views.
+
+Applying registers the new views but does not delete the old `movie_features` view from the registry. Once nothing reads it, remove it with `FeatureStore(repo_path=...).delete_feature_view("movie_features")` from a store configured by `feast_config.write_config`.
 
 The container reaches Garage and Valkey through two Mac-side port-forwards. `serving/tunnels.sh` (run by `run.sh`) keeps each one in a `while true; do kubectl port-forward ...; sleep 2; done` loop, so a dropped forward comes back within seconds. Logs and pid files are `/tmp/movie-rec-tunnel-<port>.{log,pid}`, and a second call does not start a duplicate. If a port already listens (for example from `labs/ml/feast/pf.sh`), it is left alone and is not supervised.
 
@@ -107,7 +129,7 @@ This replaced the old fixed list of ten. Every movie that passes the veto is now
 
 Every mark is an event in `s3://recommender/feedback/events/`, one JSON object per mark, so the couple's state survives a restart or a rebuild. The same marks refold that person's taste vector in the service and push it to Feast (`viewer_taste`).
 
-Feast serves the tastes; the event log in Garage stays authoritative. At start-up the service rebuilds both tastes from the log and pushes them to Feast's online store before it serves. Each mark refolds that viewer's taste in the service and pushes it, and the weekend picks read every viewer's taste back from Feast (`viewer_taste:vector`) for scoring, so the next read returns the new vector. When the read fails, returns nothing, has the wrong length, or the viewer's last push has not landed yet, the service scores with its in-memory taste instead and logs one warning naming the viewer and the reason; a failed push is retried on the next request. Movie features stay in the in-memory catalog: Feast materializes them after each catalog reload for other consumers, and the app does not read them back.
+Feast serves the tastes; the event log in Garage stays authoritative. At start-up the service rebuilds both tastes from the log and pushes them to Feast's online store before it serves. Each mark refolds that viewer's taste in the service and pushes it, and the weekend picks read every viewer's taste back from Feast (`viewer_taste:vector`) for scoring, so the next read returns the new vector. When the read fails, returns nothing, has the wrong length, or the viewer's last push has not landed yet, the service scores with its in-memory taste instead and logs one warning naming the viewer and the reason; a failed push is retried on the next request. Movie features stay in the in-memory catalog, read from the parquets described under Movie features: Feast materializes the three movie views after each catalog reload for other consumers, and the app does not read them back from Feast.
 
 ## After an OrbStack restart
 

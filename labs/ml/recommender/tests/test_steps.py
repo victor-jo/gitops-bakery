@@ -119,31 +119,80 @@ class _FakeContent:
         return np.ones((len(catalog), 4), np.float32), np.zeros(len(catalog), np.float32)
 
 
-def test_place_catalog_stamps_every_row_with_a_utc_event_time(tmp_path, monkeypatch):
+def _placing(tmp_path, monkeypatch) -> tuple[dict, list]:
+    """Fake a champion v7 whose content model places every movie; returns the writes and download URIs."""
     import pickle
     import types
 
     (tmp_path / "artifacts").mkdir()
     with open(tmp_path / "artifacts" / "content.pkl", "wb") as f:
         pickle.dump(_FakeContent(), f)
-    fake = types.SimpleNamespace(artifacts=types.SimpleNamespace(download_artifacts=lambda *a, **k: str(tmp_path)))
-    monkeypatch.setitem(sys.modules, "mlflow", fake)
-    monkeypatch.setattr(steps, "_has_champion", lambda: True)
+    uris = []
+
+    def download(uri, **_):
+        uris.append(uri)
+        return str(tmp_path)
+
+    monkeypatch.setitem(sys.modules, "mlflow", types.SimpleNamespace(
+        artifacts=types.SimpleNamespace(download_artifacts=download)))
+    monkeypatch.setattr(steps, "_champion_version", lambda: "7")
     written = {}
-    monkeypatch.setattr(steps.s3, "read_parquet", lambda key: pd.DataFrame({"movie_key": ["a", "b"]}))
-    monkeypatch.setattr(steps.s3, "write_parquet", lambda df, key: written.update(df=df, key=key))
+    catalog = pd.DataFrame({"movie_key": ["a", "b"], "title": ["A", "B"], "popularity_kr": [0.5, 0.1]})
+    monkeypatch.setattr(steps.s3, "read_parquet", lambda key: catalog)
+    monkeypatch.setattr(steps.s3, "write_parquet", lambda df, key: written.update({key: df}))
+    return written, uris
+
+
+def test_place_catalog_stamps_every_row_with_a_utc_event_time(tmp_path, monkeypatch):
+    written, _ = _placing(tmp_path, monkeypatch)
 
     before = pd.Timestamp.now(tz="UTC")
     steps.place_catalog()
     after = pd.Timestamp.now(tz="UTC")
 
-    stamp = written["df"]["event_timestamp"]
+    stamp = written["features/movie_embedding.parquet"]["event_timestamp"]
     assert str(stamp.dt.tz) == "UTC"
     assert stamp.nunique() == 1 and before <= stamp.iloc[0] <= after
 
 
+def test_place_catalog_writes_only_the_embedding_parquet_of_the_champion_version(tmp_path, monkeypatch):
+    written, uris = _placing(tmp_path, monkeypatch)
+    assert steps.place_catalog() == 2
+    assert list(written) == ["features/movie_embedding.parquet"]
+    out = written["features/movie_embedding.parquet"]
+    assert list(out.columns) == ["movie_key", "vector", "bias", "model_version", "event_timestamp"]
+    assert list(out["model_version"]) == ["7", "7"]
+    # Pinned to the version, so a promotion between the lookup and the download cannot mislabel the vectors
+    assert uris == ["models:/movie-recommender/7"]
+
+
 def test_place_catalog_skips_without_a_champion(monkeypatch, capsys):
-    monkeypatch.setattr(steps, "_has_champion", lambda: False)
+    monkeypatch.setattr(steps, "_champion_version", lambda: None)
     monkeypatch.setattr(steps.s3, "write_parquet", lambda df, key: pytest.fail("must not write features"))
     assert steps.place_catalog() == 0
     assert "skipping placement" in capsys.readouterr().out
+
+
+def test_match_and_build_writes_the_catalog_and_its_two_feature_parquets(monkeypatch):
+    from recommender.catalog import build, coupang
+
+    catalog = pd.DataFrame({
+        "movie_key": ["a"], "title": ["A"], "services": [["nfx", "dnp", "cou"]], "genres": [["drama"]],
+        "release_year": pd.array([2025], dtype="Int64"), "korean": [True], "new_this_week": [True],
+        "poster_url": [None], "popularity_kr": [0.9], "movielens_id": pd.array([None], dtype="Int64")})
+    monkeypatch.setattr(steps, "ensure_movielens", lambda: None)
+    monkeypatch.setattr(steps, "_exists", lambda key: False)
+    monkeypatch.setattr(coupang, "current_movies", lambda pages, sitemap: pages)
+    monkeypatch.setattr(build, "match_coupang", lambda movies, search, known: movies.assign(tmdb_id=None))
+    monkeypatch.setattr(build, "build_catalog", lambda *a: catalog)
+    monkeypatch.setattr(steps.s3, "read_parquet", lambda key: pd.DataFrame({"url": [], "status": []}))
+    monkeypatch.setattr(steps.s3, "put_json", lambda obj, key: None)
+    written = {}
+    monkeypatch.setattr(steps.s3, "write_parquet", lambda df, key: written.update({key: df}))
+
+    steps.match_and_build()
+
+    feature_keys = sorted(k for k in written if k.startswith("features/"))
+    assert feature_keys == ["features/movie_catalog.parquet", "features/movie_popularity.parquet"]
+    assert written["features/movie_catalog.parquet"]["korean"].tolist() == [True]
+    assert written["features/movie_popularity.parquet"]["popularity_kr"].tolist() == [0.9]

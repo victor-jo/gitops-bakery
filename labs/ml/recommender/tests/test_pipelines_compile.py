@@ -45,11 +45,12 @@ def test_training_yaml_names_the_model(tmp_path):
     assert "movie-recommender" in (tmp_path / "t.yaml").read_text()
 
 
-def test_catalog_has_the_four_steps_and_a_page_cap(tmp_path):
+def test_catalog_has_the_three_steps_and_a_page_cap(tmp_path):
     spec = _compile(movie_catalog, tmp_path / "c.yaml")[0]
     tasks = spec["root"]["dag"]["tasks"]
-    assert {"collect-justwatch", "collect-coupang", "match-and-build", "place-catalog"} <= set(tasks)
-    assert tasks["place-catalog"]["dependentTasks"] == ["match-and-build"]
+    # Placement is the training run's job, so the catalog run writes no model outputs
+    assert set(tasks) == {"collect-justwatch", "collect-coupang", "match-and-build"}
+    assert tasks["match-and-build"]["dependentTasks"] == ["collect-coupang"]
     assert spec["root"]["inputDefinitions"]["parameters"]["max_pages"]["defaultValue"] == 0
 
 
