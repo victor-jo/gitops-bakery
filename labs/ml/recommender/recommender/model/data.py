@@ -70,5 +70,9 @@ def split_all(
     """Split MovieLens rows 75/15/10 and the couple's rows 80/20; the couple's train part joins train."""
     is_couple = df["user_idx"].isin(list(user_index.values())).to_numpy()
     train, val, test = split(df[~is_couple], seed)
-    couple_train, couple_holdout = split_couple(df[is_couple], seed)
+    couple = df[is_couple]
+    # train_test_split cannot split fewer than two rows; before any feedback there is no holdout
+    if len(couple) < 2:
+        return pd.concat([train, couple], ignore_index=True), val, test, couple.iloc[:0]
+    couple_train, couple_holdout = split_couple(couple, seed)
     return pd.concat([train, couple_train], ignore_index=True), val, test, couple_holdout

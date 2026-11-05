@@ -120,3 +120,13 @@ def test_predict_batches(monkeypatch):
     full = predict(model, u, i)
     monkeypatch.setattr(mf, "PREDICT_BATCH", 2)
     assert np.allclose(predict(model, u, i), full)
+
+
+def test_split_all_without_couple_rows_gives_an_empty_holdout():
+    ml = pd.DataFrame({"user_idx": np.arange(100, dtype=np.int32) % 10, "item_idx": np.int32(0),
+                       "label": np.float32(1)})
+    train_df, val, test, holdout = split_all(ml, {"me": 10, "wife": 11})
+    assert (len(train_df), len(val), len(test), len(holdout)) == (75, 15, 10, 0)
+    _, _, _, holdout = split_all(pd.concat([ml, ml.iloc[:1].assign(user_idx=np.int32(10))]),
+                                 {"me": 10, "wife": 11})
+    assert len(holdout) == 0
