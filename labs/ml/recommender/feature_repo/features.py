@@ -40,6 +40,8 @@ movie_catalog = FeatureView(
         Field(name="korean", dtype=Bool),
         Field(name="new_this_week", dtype=Bool),
         Field(name="poster_url", dtype=String),
+        Field(name="description", dtype=String),
+        Field(name="actors", dtype=Array(String)),
     ],
     source=_movie_source("movie_catalog"),
 )

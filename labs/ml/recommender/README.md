@@ -60,7 +60,7 @@ The movie features are split by who writes them and how often. Each Feast featur
 
 | Feature view | Parquet | Written by | Fields | TTL |
 |---|---|---|---|---|
-| `movie_catalog` | `features/movie_catalog.parquet` | catalog run (`match_and_build`), daily | `title`, `services`, `genres`, `release_year`, `korean`, `new_this_week`, `poster_url` | 7 days |
+| `movie_catalog` | `features/movie_catalog.parquet` | catalog run (`match_and_build`), daily | `title`, `services`, `genres`, `release_year`, `korean`, `new_this_week`, `poster_url`, `description`, `actors` (for the liked-movie tabs' content similarity) | 7 days |
 | `movie_popularity` | `features/movie_popularity.parquet` | catalog run (`match_and_build`), daily | `popularity_kr` | 2 days |
 | `movie_embedding` | `features/movie_embedding.parquet` | training run (`place_catalog`) | `vector`, `bias`, `model_version` (the champion's registered version) | 3650 days |
 

@@ -16,6 +16,7 @@ def _catalog(keys=("a", "b", "c")):
         "release_year": pd.array([2024] + [None] * (n - 1), dtype="Int64"),
         "korean": [True] + [False] * (n - 1), "new_this_week": [False] * n,
         "poster_url": [None] * n, "popularity_kr": np.linspace(1.0, 0.5, n), "description": ["x"] * n,
+        "actors": [["y"]] * n,
     })
 
 
@@ -24,7 +25,7 @@ def test_catalog_run_writes_only_the_catalog_and_popularity_parquets():
     assert set(frames) == {"features/movie_catalog.parquet", "features/movie_popularity.parquet"}
     cat, pop = frames["features/movie_catalog.parquet"], frames["features/movie_popularity.parquet"]
     assert list(cat.columns) == ["movie_key", "title", "services", "genres", "release_year", "korean",
-                                 "new_this_week", "poster_url", "event_timestamp"]
+                                 "new_this_week", "poster_url", "description", "actors", "event_timestamp"]
     assert list(pop.columns) == ["movie_key", "popularity_kr", "event_timestamp"]
     assert (cat["event_timestamp"] == AT).all() and (pop["event_timestamp"] == AT).all()
 

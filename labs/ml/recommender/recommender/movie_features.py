@@ -19,7 +19,9 @@ CATALOG = "movie_catalog"
 POPULARITY = "movie_popularity"
 EMBEDDING = "movie_embedding"
 COLUMNS = {
-    CATALOG: ["title", "services", "genres", "release_year", "korean", "new_this_week", "poster_url"],
+    # description and actors feed the content similarity behind the liked-movie tabs
+    CATALOG: ["title", "services", "genres", "release_year", "korean", "new_this_week", "poster_url", "description",
+              "actors"],
     POPULARITY: ["popularity_kr"],
     EMBEDDING: ["vector", "bias", "model_version"],
 }

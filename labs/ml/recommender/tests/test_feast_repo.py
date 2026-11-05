@@ -66,7 +66,7 @@ def test_definitions_apply_to_a_local_registry_and_sqlite_online_store(tmp_path,
         "movie_catalog", "movie_popularity", "movie_embedding", "viewer_taste"}
     fields = {v.name: {f.name for f in v.features} for v in store.list_feature_views()}
     assert fields["movie_catalog"] == {"title", "services", "genres", "release_year", "korean", "new_this_week",
-                                       "poster_url"}
+                                       "poster_url", "description", "actors"}
     assert fields["movie_popularity"] == {"popularity_kr"}
     assert fields["movie_embedding"] == {"vector", "bias", "model_version"}
     assert fields["viewer_taste"] == {"vector", "updated_at"}
