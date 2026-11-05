@@ -20,18 +20,25 @@ def daily_cron_utc(hour: int, minute: int = 0) -> str:
 # Daily 05:00 KST is 20:00 UTC; Monday 06:00 KST is Sunday 21:00 UTC; Monday 07:00 KST is Sunday 22:00 UTC
 CATALOG_CRON = daily_cron_utc(hour=5)
 TRAINING_CRON = weekly_cron_utc(weekday=1, hour=6)
-WEEKLY_CRON = weekly_cron_utc(weekday=1, hour=7)
-CRONS = {"movie-catalog": CATALOG_CRON, "movie-recommender-training": TRAINING_CRON, "movie-recommender-monitoring": WEEKLY_CRON}
+MONITORING_CRON = weekly_cron_utc(weekday=1, hour=7)
+CRONS = {"movie-catalog": CATALOG_CRON, "movie-recommender-training": TRAINING_CRON, "movie-recommender-monitoring": MONITORING_CRON}
 
 
-def names_to_replace(existing: list, job_name: str) -> list:
-    """Ids of the recurring runs already named job_name; they are deleted before the new one is created."""
-    return [j.recurring_run_id for j in existing if j.display_name == job_name]
+def list_all_recurring_runs(client) -> list:
+    """Every recurring run, following next_page_token until the server has no more pages."""
+    runs, token = [], ""
+    while True:
+        page = client.list_recurring_runs(page_token=token, page_size=100)
+        runs += page.recurring_runs or []
+        token = page.next_page_token
+        if not token:
+            return runs
 
 
 def schedule_recurring(client, job_name: str, **create_args):
-    """Replace any recurring run with this name by a fresh one, so repeated calls never leave duplicates."""
-    existing = client.list_recurring_runs(page_size=100).recurring_runs or []
-    for run_id in names_to_replace(existing, job_name):
-        client.delete_recurring_run(run_id)
-    return client.create_recurring_run(job_name=job_name, **create_args)
+    """Create the recurring run first, then delete older ones with the same name, so a failed create keeps the old schedule."""
+    new = client.create_recurring_run(job_name=job_name, **create_args)
+    for old in list_all_recurring_runs(client):
+        if old.display_name == job_name and old.recurring_run_id != new.recurring_run_id:
+            client.delete_recurring_run(old.recurring_run_id)
+    return new

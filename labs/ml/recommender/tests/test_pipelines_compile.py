@@ -68,9 +68,9 @@ def test_monitoring_pipeline_has_one_step_and_the_evidently_url(tmp_path):
 
 
 def test_weekly_cron_is_monday_0700_kst_in_utc():
-    from schedule import WEEKLY_CRON, weekly_cron_utc
+    from schedule import MONITORING_CRON, weekly_cron_utc
 
-    assert WEEKLY_CRON == "0 0 22 * * 0"  # Sunday 22:00 UTC
+    assert MONITORING_CRON == "0 0 22 * * 0"  # Sunday 22:00 UTC
     assert weekly_cron_utc(weekday=1, hour=3, minute=30) == "0 30 18 * * 0"  # crosses back one day
     assert weekly_cron_utc(weekday=0, hour=2) == "0 0 17 * * 6"  # Sunday 02:00 KST wraps to Saturday
 
@@ -83,29 +83,42 @@ def test_schedule_crons_in_utc():
     assert daily_cron_utc(hour=3, minute=30) == "0 30 18 * * *"
 
 
-def test_schedule_recurring_replaces_same_name_only():
-    from types import SimpleNamespace as NS
+class _FakeClient:
+    """Two pages of recurring runs; create_recurring_run adds one or raises."""
 
+    def __init__(self, fail=False):
+        from types import SimpleNamespace as NS
+
+        self.NS, self.fail, self.deleted = NS, fail, []
+        self.pages = {"": [NS(recurring_run_id="a", display_name="movie-catalog")], "t2": [NS(recurring_run_id="b", display_name="other"), NS(recurring_run_id="c", display_name="movie-catalog")]}
+
+    def list_recurring_runs(self, page_token, page_size):
+        return self.NS(recurring_runs=self.pages[page_token], next_page_token="t2" if page_token == "" else "")
+
+    def create_recurring_run(self, **kw):
+        if self.fail:
+            raise RuntimeError("create failed")
+        new = self.NS(recurring_run_id="new", display_name=kw["job_name"])
+        self.pages["t2"].append(new)
+        return new
+
+    def delete_recurring_run(self, run_id):
+        self.deleted.append(run_id)
+
+
+def test_schedule_recurring_deletes_old_same_name_across_pages_after_create():
+    fake = _FakeClient()
     from schedule import schedule_recurring
 
-    class Fake:
-        def __init__(self):
-            self.runs = [NS(recurring_run_id="a", display_name="movie-catalog"), NS(recurring_run_id="b", display_name="other")]
-            self.deleted, self.created = [], []
+    assert schedule_recurring(fake, "movie-catalog").recurring_run_id == "new"
+    assert fake.deleted == ["a", "c"]  # "c" sits on page two; "b" has another name and "new" is kept
 
-        def list_recurring_runs(self, page_size):
-            return NS(recurring_runs=self.runs)
 
-        def delete_recurring_run(self, run_id):
-            self.deleted.append(run_id)
+def test_schedule_recurring_keeps_old_runs_when_create_fails():
+    import pytest
+    from schedule import schedule_recurring
 
-        def create_recurring_run(self, **kw):
-            self.created.append(kw["job_name"])
-
-    fake = Fake()
-    schedule_recurring(fake, "movie-catalog", cron_expression="x")
-    assert fake.deleted == ["a"] and fake.created == ["movie-catalog"]
-    fake = Fake()
-    fake.runs = []
-    schedule_recurring(fake, "movie-catalog")
-    assert fake.deleted == [] and fake.created == ["movie-catalog"]
+    fake = _FakeClient(fail=True)
+    with pytest.raises(RuntimeError):
+        schedule_recurring(fake, "movie-catalog")
+    assert fake.deleted == []
