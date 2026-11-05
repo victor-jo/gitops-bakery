@@ -73,3 +73,39 @@ def test_weekly_cron_is_monday_0700_kst_in_utc():
     assert WEEKLY_CRON == "0 0 22 * * 0"  # Sunday 22:00 UTC
     assert weekly_cron_utc(weekday=1, hour=3, minute=30) == "0 30 18 * * 0"  # crosses back one day
     assert weekly_cron_utc(weekday=0, hour=2) == "0 0 17 * * 6"  # Sunday 02:00 KST wraps to Saturday
+
+
+def test_schedule_crons_in_utc():
+    from schedule import CATALOG_CRON, TRAINING_CRON, daily_cron_utc
+
+    assert CATALOG_CRON == "0 0 20 * * *"  # 05:00 KST is 20:00 UTC the day before
+    assert TRAINING_CRON == "0 0 21 * * 0"  # Monday 06:00 KST is Sunday 21:00 UTC
+    assert daily_cron_utc(hour=3, minute=30) == "0 30 18 * * *"
+
+
+def test_schedule_recurring_replaces_same_name_only():
+    from types import SimpleNamespace as NS
+
+    from schedule import schedule_recurring
+
+    class Fake:
+        def __init__(self):
+            self.runs = [NS(recurring_run_id="a", display_name="movie-catalog"), NS(recurring_run_id="b", display_name="other")]
+            self.deleted, self.created = [], []
+
+        def list_recurring_runs(self, page_size):
+            return NS(recurring_runs=self.runs)
+
+        def delete_recurring_run(self, run_id):
+            self.deleted.append(run_id)
+
+        def create_recurring_run(self, **kw):
+            self.created.append(kw["job_name"])
+
+    fake = Fake()
+    schedule_recurring(fake, "movie-catalog", cron_expression="x")
+    assert fake.deleted == ["a"] and fake.created == ["movie-catalog"]
+    fake = Fake()
+    fake.runs = []
+    schedule_recurring(fake, "movie-catalog")
+    assert fake.deleted == [] and fake.created == ["movie-catalog"]
