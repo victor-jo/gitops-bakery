@@ -42,3 +42,8 @@
   - MLflow run `7d4919ae7d484025a38ef74ff0af22bb`: val_auc 0.7631, precision_10 0.4614, recall_10 0.8316. v2 was not promoted ("val_auc dropped by 0.048660 > 0.005"), so v1 stays champion.
   - Caveat: the gate compares numbers measured on different validation sets (the 20k-user sample vs. all users), so the two runs are not like for like. The full run probably overfits at 5 epochs with the same learning rate, because it takes 8 times as many steps per epoch.
 - Full Coupang pass started at 04:57 UTC (run `1f2373e3-41e0-40e8-8f68-353dc1d027eb`, about 10,229 uncached pages at 1 req/s, roughly 3 hours or more).
+- Gate fix: the champion is now re-scored on the new run's own holdout, through its own user and movie index maps, and only rows both models know are compared. Rerun of the full-data training (KFP run `c35866a9-f066-49d0-99e6-a90736e59e63`, MLflow run `74004e04fc9e4551aec9b4ab0761db35`, 257 s) on 770,406 shared rows:
+  - new: val_auc 0.7637, precision_10 0.4634, recall_10 0.8295;
+  - champion v1: val_auc 0.8226, precision_10 0.4731, recall_10 0.8368.
+  - v3 was not promoted, and v1 stays champion.
+  - v1 scores higher here than on its own holdout (0.8117), because many of the shared rows were in v1's training split. A sampled champion against a full-data candidate is still not a clean comparison.
