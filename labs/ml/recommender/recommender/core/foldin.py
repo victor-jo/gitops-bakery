@@ -38,6 +38,8 @@ def fold_in(
     iters: int = 25,
 ) -> np.ndarray:
     """Newton-solve the L2-regularized logistic regression of the user vector toward prior."""
+    if len(labels) != len(item_vecs):
+        raise ValueError(f"labels ({len(labels)}) must align with item_vecs ({len(item_vecs)})")
     if len(labels) == 0:
         return np.array(prior, dtype=np.float32)
     v = np.asarray(item_vecs, dtype=np.float64)
@@ -45,13 +47,31 @@ def fold_in(
     y = np.asarray(labels, dtype=np.float64)
     prior64 = np.asarray(prior, dtype=np.float64)
     eye = np.eye(v.shape[1])
+
+    def objective(u: np.ndarray) -> float:
+        z = v @ u + offset
+        d = u - prior64
+        return float(np.sum(np.logaddexp(0.0, z) - y * z) + 0.5 * l2 * (d @ d))
+
     u = prior64.copy()
+    cur = objective(u)
     for _ in range(iters):
-        p = 1.0 / (1.0 + np.exp(-(v @ u + offset)))
+        z = v @ u + offset
+        p = 0.5 * (1.0 + np.tanh(0.5 * z))  # overflow-free sigmoid
         grad = v.T @ (p - y) + l2 * (u - prior64)
         hess = (v * (p * (1.0 - p))[:, None]).T @ v + l2 * eye
         step = np.linalg.solve(hess, grad)
-        u -= step
-        if np.linalg.norm(step) < 1e-6:
+        # Backtracking line search: halve the step until the objective decreases.
+        t = 1.0
+        for _ in range(20):
+            cand = u - t * step
+            val = objective(cand)
+            if val < cur:
+                break
+            t *= 0.5
+        else:
+            break  # no improving step: already at the optimum within precision
+        u, cur = cand, val
+        if t * np.linalg.norm(step) < 1e-6:
             break
     return u.astype(np.float32)

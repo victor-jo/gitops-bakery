@@ -65,3 +65,40 @@ def test_genre_prior_empty_or_no_match_is_zero():
     pop = np.ones(2)
     assert np.array_equal(genre_prior(vecs, genres, pop, []), np.zeros(3, np.float32))
     assert np.array_equal(genre_prior(vecs, genres, pop, ["Horror"]), np.zeros(3, np.float32))
+
+
+def _objective(u, v, off, y, prior, l2=1.0):
+    z = v @ u + off
+    return float(np.sum(np.logaddexp(0.0, z) - y * z) + 0.5 * l2 * np.sum((u - prior) ** 2))
+
+
+def test_foldin_large_norm_opposing_bias_matches_reference_and_never_increases():
+    rng = np.random.default_rng(3)
+    for _ in range(20):
+        dim = 8
+        vec = rng.normal(size=(1, dim))
+        vec = (10.0 * vec / np.linalg.norm(vec)).astype(np.float32)
+        bias = np.array([rng.choice([-6.0, 6.0])], np.float32)
+        label = np.array([1.0 if bias[0] < 0 else 0.0])  # label contradicts the bias
+        prior = np.zeros(dim, np.float32)
+        objs = [
+            _objective(fold_in(vec, bias, 0.0, label, prior, iters=k).astype(np.float64),
+                       vec.astype(np.float64), bias.astype(np.float64), label, prior.astype(np.float64))
+            for k in range(0, 26)
+        ]
+        assert all(b <= a + 1e-9 for a, b in zip(objs, objs[1:]))
+        ref = np.zeros(dim)
+        v64, b64 = vec.astype(np.float64), bias.astype(np.float64)
+        for _ in range(5000):
+            z = v64 @ ref + b64
+            pr = 1.0 / (1.0 + np.exp(-z))
+            ref -= 0.01 * (v64.T @ (pr - label) + ref)
+        got = fold_in(vec, bias, 0.0, label, prior)
+        assert np.allclose(got, ref, atol=1e-3)
+
+
+def test_foldin_label_length_mismatch_raises():
+    import pytest
+
+    with pytest.raises(ValueError):
+        fold_in(np.zeros((3, 4), np.float32), np.zeros(3, np.float32), 0.0, np.zeros(2), np.zeros(4, np.float32))
