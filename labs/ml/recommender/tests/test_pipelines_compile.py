@@ -80,7 +80,7 @@ def test_schedule_crons_in_utc():
     from schedule import CATALOG_CRON, TRAINING_CRON, daily_cron_utc
 
     assert CATALOG_CRON == "0 0 20 * * *"  # 05:00 KST is 20:00 UTC the day before
-    assert TRAINING_CRON == "0 0 21 * * 0"  # Monday 06:00 KST is Sunday 21:00 UTC
+    assert TRAINING_CRON == "0 0 21 * * *"  # daily 06:00 KST is 21:00 UTC the day before
     assert daily_cron_utc(hour=3, minute=30) == "0 30 18 * * *"
 
 
