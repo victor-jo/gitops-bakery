@@ -51,7 +51,11 @@ def test_build_catalog_merges_services_by_tmdb_id():
     assert out.loc["cp:c3", "services"] == ["cou"]
     assert out.loc["cp:c3", "tmdb_id"] is None
     assert out.loc["tmdb:100", "movielens_id"] == 10
-    assert out.loc["tmdb:200", "movielens_id"] is None
+    assert out.loc["tmdb:200", "movielens_id"] is pd.NA
+    assert out.movielens_id.dtype == "Int64" and out.release_year.dtype == "Int64"
+    assert int(out.loc["tmdb:100", "movielens_id"]) == out.loc["tmdb:100", "movielens_id"] == 10
+    assert out.loc["cp:c3", "release_year"] is pd.NA
+    assert out.loc["tmdb:100", "release_year"] == 2020
     assert out.loc["tmdb:100", "popularity_kr"] == 1.0
     assert out.loc["tmdb:200", "popularity_kr"] == pytest.approx(2 / 3)
     assert out.loc["cp:c3", "popularity_kr"] == 0.0
@@ -68,6 +72,15 @@ def test_build_catalog_new_this_week_window():
     assert out.loc["tmdb:1", "new_this_week"] and out.loc["tmdb:1", "added_on"] == date(2026, 10, 29)
     assert not out.loc["tmdb:2", "new_this_week"]
     assert out.loc["tmdb:3", "added_on"] is None and not out.loc["tmdb:3", "new_this_week"]
+
+
+def test_new_title_without_tmdb_id_keeps_added_on():
+    jw = _jw([["j1", None, "A", 2020, [], "", None, "nfx", 1]])
+    new = pd.DataFrame({"justwatch_id": ["j1"], "tmdb_id": ["5"], "service": ["nfx"],
+                        "added_on": [date(2026, 11, 1)]})
+    out = build_catalog(jw, _cp([]), new, LINKS, TODAY)
+    assert list(out.movie_key) == ["jw:j1"]
+    assert out.added_on.iloc[0] == date(2026, 11, 1) and out.new_this_week.iloc[0]
 
 
 def test_match_coupang_never_searches_a_coupang_id_twice():

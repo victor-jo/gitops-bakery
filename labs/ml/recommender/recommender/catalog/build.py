@@ -68,7 +68,7 @@ def build_catalog(justwatch: pd.DataFrame, coupang: pd.DataFrame, new: pd.DataFr
 
     for jid, tmdb, day in zip(new.justwatch_id, new.tmdb_id, new.added_on):
         t = _tmdb(tmdb)
-        note(f"tmdb:{t}" if t else jw_key.get(jid), day)
+        note(jw_key.get(jid) or (f"tmdb:{t}" if t else None), day)
     if "added_on" in cp:
         for key, day in zip(cp.key, cp.added_on):
             note(key, day)
@@ -95,7 +95,9 @@ def build_catalog(justwatch: pd.DataFrame, coupang: pd.DataFrame, new: pd.DataFr
             "added_on": day, "new_this_week": day is not None and day >= week_ago,
         })
     out = pd.DataFrame(rows)
+    for col in ("movielens_id", "release_year"):
+        out[col] = out[col].astype("Int64")
     # Keep None (not NaN) for missing ids and dates.
-    for col in ("tmdb_id", "movielens_id", "release_year", "added_on"):
+    for col in ("tmdb_id", "added_on"):
         out[col] = out[col].astype(object).where(out[col].notna(), None)
     return out
