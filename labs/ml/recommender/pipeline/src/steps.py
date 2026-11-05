@@ -141,10 +141,26 @@ def match_and_build() -> int:
     today = _today()
     catalog = build_catalog(s3.read_parquet(JW_TITLES), matched, s3.read_parquet(JW_NEW),
                             s3.read_parquet(MOVIELENS["links"]), today)
+    check_services(catalog, s3.read_parquet(CATALOG) if _exists(CATALOG) else None)
     s3.write_parquet(catalog, CATALOG)
     s3.write_parquet(catalog, f"catalog/history/{today.isoformat()}.parquet")
     print(f"catalog: {len(catalog)} movies, {int(catalog['movielens_id'].notna().sum())} with MovieLens ids")
     return len(catalog)
+
+
+def _service_counts(catalog: pd.DataFrame) -> dict[str, int]:
+    return catalog["services"].explode().value_counts().to_dict()
+
+
+def check_services(catalog: pd.DataFrame, previous: pd.DataFrame | None) -> None:
+    """Refuse a catalog where a service vanished or shrank below half of the previous catalog's count."""
+    counts = _service_counts(catalog)
+    before = _service_counts(previous) if previous is not None else {}
+    for service in SERVICES + ["cou"]:
+        now, then = counts.get(service, 0), before.get(service, 0)
+        if now == 0 or now < then / 2:
+            raise RuntimeError(f"catalog not written: {service} has {now} titles (previous catalog: {then}); "
+                               "a collector probably failed")
 
 
 # ---------- training ----------
@@ -154,7 +170,7 @@ def _events() -> list[dict]:
 
 
 def _sample(ratings: pd.DataFrame, sample_users: int) -> pd.DataFrame:
-    if sample_users <= 0:
+    if sample_users <= 0 or sample_users >= ratings["userId"].nunique():
         return ratings
     users = ratings["userId"].drop_duplicates().sample(n=sample_users, random_state=42)
     return ratings[ratings["userId"].isin(users)].reset_index(drop=True)
@@ -167,8 +183,12 @@ def train(epochs: int, sample_users: int, dim: int, holdout_path: str) -> str:
     from recommender.model import data, mf
     from recommender.model.content import fit_content_model
 
+    if not _exists(CATALOG):
+        raise RuntimeError(f"s3://{BUCKET}/{CATALOG} does not exist yet; run the movie-catalog pipeline first")
     started = time.time()
     ratings = _sample(s3.read_parquet(MOVIELENS["ratings"]), sample_users)
+    # factorize(sort=True) in load_movielens gives user_idx i to the i-th smallest userId
+    user_ids = np.sort(ratings["userId"].unique())
     catalog = s3.read_parquet(CATALOG)
     couple = data.load_couple_feedback(_events(), catalog)
     rows, user_index, item_index = data.load_movielens(ratings, couple)
@@ -191,7 +211,7 @@ def train(epochs: int, sample_users: int, dim: int, holdout_path: str) -> str:
                            "train_rows": len(train_rows), "n_users": n_users, "n_items": n_items,
                            "couple_rows": len(couple)})
         mlflow.log_metric("train_seconds", train_s)
-        np.savez(os.path.join(tmp, "arrays.npz"), **arrays,
+        np.savez(os.path.join(tmp, "arrays.npz"), **arrays, user_ids=user_ids,
                  user_index=json.dumps(user_index), item_index=json.dumps(item_index))
         with open(os.path.join(tmp, "content.pkl"), "wb") as f:
             pickle.dump(content, f)
@@ -226,12 +246,61 @@ def _metrics(arrays: dict, holdout: pd.DataFrame) -> tuple[dict[str, float], int
     return metrics, len(couple) if "couple_auc" in metrics else 0
 
 
-def _champion_metrics(client) -> dict[str, float] | None:
+def _user_keys(arrays: dict) -> np.ndarray:
+    """MovieLens userId for each MovieLens user index, then the viewer names at their own indices."""
+    names = json.loads(str(arrays["user_index"]))
+    return np.array([*map(int, arrays["user_ids"]), *sorted(names, key=names.get)], dtype=object)
+
+
+def _item_keys(arrays: dict) -> np.ndarray:
+    index = json.loads(str(arrays["item_index"]))
+    keys = np.empty(len(index), dtype=np.int64)
+    keys[list(index.values())] = [int(m) for m in index]
+    return keys
+
+
+def compare_on_same_rows(new: dict, champion: dict, holdout: pd.DataFrame
+                         ) -> tuple[dict[str, float], dict[str, float], int, int]:
+    """Score both models on the holdout rows the champion can also score, each through its own index maps.
+
+    Returns (new metrics, champion metrics, couple holdout size for the gate, rows compared).
+    """
+    champ_users = {k: i for i, k in enumerate(_user_keys(champion))}
+    champ_items = {int(k): i for i, k in enumerate(_item_keys(champion))}
+    users = pd.Series(_user_keys(new)[holdout["user_idx"].to_numpy()]).map(champ_users)
+    items = pd.Series(_item_keys(new)[holdout["item_idx"].to_numpy()]).map(champ_items)
+    known = (users.notna() & items.notna()).to_numpy()
+    rows = holdout[known].reset_index(drop=True)
+    mapped = rows.assign(user_idx=users[known].astype(np.int64).to_numpy(),
+                         item_idx=items[known].astype(np.int64).to_numpy())
+    new_metrics, couple_size = _metrics(new, rows)
+    champ_metrics, _ = _metrics(champion, mapped)
+    return new_metrics, champ_metrics, couple_size, len(rows)
+
+
+def _load_arrays(path: str) -> dict:
+    with np.load(path) as z:
+        return {k: z[k] for k in z.files}
+
+
+def _champion_arrays(client, tmp: str) -> dict | None:
+    """The champion's MF arrays, or None when there is no champion yet."""
+    import mlflow
+
     models = client.search_registered_models(filter_string=f"name='{MODEL_NAME}'")
     if not models or ALIAS not in models[0].aliases:
         return None
     version = client.get_model_version_by_alias(MODEL_NAME, ALIAS)
-    return dict(client.get_run(version.run_id).data.metrics)
+    local = mlflow.artifacts.download_artifacts(f"runs:/{version.run_id}/arrays/arrays.npz",
+                                                dst_path=os.path.join(tmp, "champion"))
+    arrays = _load_arrays(local)
+    if "user_ids" not in arrays:
+        # Models trained before user_ids was saved: redo their deterministic user sample
+        sample_users = int(client.get_run(version.run_id).data.params.get("sample_users", 0))
+        ratings = _sample(s3.read_parquet(MOVIELENS["ratings"]), sample_users)
+        arrays["user_ids"] = np.sort(ratings["userId"].unique())
+    print(f"gate: champion is v{version.version} (run {version.run_id})")
+    return arrays
 
 
 def evaluate_and_gate(run_id: str, holdout_path: str) -> str:
@@ -249,13 +318,21 @@ def evaluate_and_gate(run_id: str, holdout_path: str) -> str:
     client = MlflowClient()
     with tempfile.TemporaryDirectory() as tmp:
         local = mlflow.artifacts.download_artifacts(f"runs:/{run_id}/arrays", dst_path=tmp)
-        with np.load(os.path.join(local, "arrays.npz")) as z:
-            arrays = {k: z[k] for k in z.files}
-        metrics, couple_size = _metrics(arrays, pd.read_parquet(holdout_path))
-        champion = _champion_metrics(client)
-        promote, reason = should_promote(metrics, champion, couple_size)
+        arrays = _load_arrays(os.path.join(local, "arrays.npz"))
+        holdout = pd.read_parquet(holdout_path)
+        metrics, couple_size = _metrics(arrays, holdout)
+        # The champion is re-scored on this run's holdout, so both models are judged on the same rows
+        champion = _champion_arrays(client, tmp)
+        gate_metrics = {}
+        if champion is not None:
+            new_same, champ_metrics, couple_size, n_rows = compare_on_same_rows(arrays, champion, holdout)
+            gate_metrics = {"gate_rows": n_rows, **{f"gate_{k}": v for k, v in new_same.items()},
+                            **{f"gate_champion_{k}": v for k, v in champ_metrics.items()}}
+            promote, reason = should_promote(new_same, champ_metrics, couple_size)
+        else:
+            promote, reason = should_promote(metrics, None, couple_size)
         with mlflow.start_run(run_id=run_id):
-            mlflow.log_metrics(metrics)
+            mlflow.log_metrics({**metrics, **gate_metrics})
             mlflow.set_tags({"gate_reason": reason, "gate_promoted": str(promote).lower()})
             info = mlflow.pyfunc.log_model(
                 name="model", python_model=Wrapper(), registered_model_name=MODEL_NAME,
@@ -264,7 +341,8 @@ def evaluate_and_gate(run_id: str, holdout_path: str) -> str:
     version = info.registered_model_version
     if promote:
         client.set_registered_model_alias(MODEL_NAME, ALIAS, version)
-    print(f"gate: {metrics} couple_holdout={couple_size} -> v{version} promote={promote} ({reason})")
+    print(f"gate: {metrics} same-rows {gate_metrics} couple_holdout={couple_size} "
+          f"-> v{version} promote={promote} ({reason})")
     return reason
 
 
