@@ -16,6 +16,12 @@ def _unit(m: np.ndarray) -> np.ndarray:
     return m / np.maximum(n, 1e-9)
 
 
+def _sigmoid(x: np.ndarray) -> np.ndarray:
+    # Stable form: exp is only ever taken of non-positive values.
+    e = np.exp(-np.abs(x))
+    return np.where(x >= 0, 1.0 / (1.0 + e), e / (1.0 + e))
+
+
 def recommend(
     catalog: pd.DataFrame, global_bias: float, taste: dict[str, np.ndarray | None], couple: CoupleState
 ) -> list[dict]:
@@ -50,23 +56,27 @@ def recommend(
         if dis:
             cos = (unit @ unit[dis].T).max(axis=1)
             logit -= np.maximum(0.0, cos - _COS_FLOOR) / (1.0 - _COS_FLOOR)
-        probs[vid] = 1.0 / (1.0 + np.exp(-logit.astype(np.float64)))
+        probs[vid] = _sigmoid(logit.astype(np.float64))
 
     low = np.minimum(probs["me"], probs["wife"])
     cold = not any(vs.liked or vs.disliked or vs.genres for vs in couple.viewers.values())
     score = catalog["popularity_kr"].to_numpy(dtype=np.float64) if cold else low
 
-    # Veto only counts for a viewer whose taste is known.
+    # Once anyone has given feedback the veto binds both viewers; in cold mode only known tastes veto.
     veto = np.zeros(n, dtype=bool)
     for vid in VIEWERS:
-        if has_taste[vid]:
+        if has_taste[vid] or not cold:
             veto |= probs[vid] < VETO_P
     survivors = np.flatnonzero(eligible & ~veto)
     survivors = survivors[np.argsort(-score[survivors], kind="stable")][:MAX_RESULTS]
     picked = [(int(i), False) for i in survivors]
 
     if len(picked) < MIN_RESULTS:
-        gamble_mask = eligible & veto & (low >= STRONG_DISLIKE_P)
+        floor = np.ones(n, dtype=bool)
+        for vid in VIEWERS:
+            if has_taste[vid] or not cold:
+                floor &= probs[vid] >= STRONG_DISLIKE_P
+        gamble_mask = eligible & veto & floor
         pool = np.flatnonzero(gamble_mask)
         pool = pool[np.argsort(-score[pool], kind="stable")][: MIN_RESULTS - len(picked)]
         picked += [(int(i), True) for i in pool]

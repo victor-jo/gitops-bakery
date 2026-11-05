@@ -63,7 +63,7 @@ def replay(events: Iterable[Event]) -> CoupleState:
             v = state.viewers[e.viewer]
             if e.kind == "genres":
                 v.genres = list(e.genres or [])
-            elif e.kind == "mark" and e.movie_key:
+            elif e.kind == "mark" and e.movie_key and e.liked is not None:
                 v.liked.discard(e.movie_key)
                 v.disliked.discard(e.movie_key)
                 (v.liked if e.liked else v.disliked).add(e.movie_key)

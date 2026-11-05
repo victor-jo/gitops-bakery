@@ -44,7 +44,9 @@ def _warm():
 def test_veto_drops_movie_one_dislikes():
     out = recommend(_cat([("a", 0.9, 0.3), ("b", 0.8, 0.8)]), 0.0, TASTE, _warm())
     assert [r["movie_key"] for r in out if not r["gamble"]] == ["b"]
-    assert "a" not in [r["movie_key"] for r in out if not r["gamble"]]
+    assert all(r["gamble"] for r in out if r["movie_key"] == "a")
+    out = recommend(_cat([("z", 0.9, 0.1), ("b", 0.8, 0.8)]), 0.0, TASTE, _warm())
+    assert [r["movie_key"] for r in out] == ["b"]
 
 
 def test_rank_by_lower_score():
@@ -91,3 +93,46 @@ def test_reason_prefers_shared_like():
     c.viewers["wife"].genres = ["drama"]
     assert recommend(cat, 0.0, TASTE, c)[0]["reason"] == "나이(가) 좋아한 'Tliked'과 비슷해요"
     assert out[0]["services"] == ["Netflix"]
+
+
+def test_veto_applies_to_viewer_without_taste():
+    # wife has no taste, so p_wife = sigmoid(bias + global): 0.1 < 0.20 is absent even as a gamble.
+    cat = _cat([("a", 0.9, 0.9), ("b", 0.9, 0.9)])
+    cat["bias"] = [_logit(0.1), _logit(0.5)]
+    cat["vector"] = [np.array([_logit(0.9), 0], np.float32)] * 2
+    cat["bias"] = [_logit(0.1), 0.0]
+    out = recommend(cat, 0.0, {"me": np.array([1.0, 0.0], np.float32), "wife": None}, _warm())
+    assert [r["movie_key"] for r in out if r["movie_key"] == "a"] == []
+
+
+def test_dislike_penalty_vetoes_near_neighbour():
+    cat = _cat([("bad", 0.9, 0.9), ("near", 0.9, 0.9), ("far", 0.9, 0.9)])
+    cat["vector"] = [
+        np.array([0.2, 0.0], np.float32),
+        np.array([0.2, 0.001], np.float32),
+        np.array([0.0, 3.0], np.float32),
+    ]
+    taste = {"me": np.array([1.0, 0.0], np.float32), "wife": np.array([1.0, 0.0], np.float32)}
+    c = _couple(disliked={"bad"})
+    out = recommend(cat, 0.0, taste, c)
+    near = [r for r in out if r["movie_key"] == "near"]
+    assert near and near[0]["gamble"] and near[0]["p_me"] < 0.35
+    assert not [r for r in out if r["movie_key"] == "far"][0]["gamble"]
+
+
+def test_genre_bonus_moves_movie_up():
+    cat = _cat([("a", 0.6, 0.6), ("b", 0.6, 0.6)])
+    cat["genres"] = [["drama"], ["comedy"]]
+    c = _couple(genres=["comedy"])
+    c.viewers["wife"].genres = ["comedy"]
+    out = recommend(cat, 0.0, TASTE, c)
+    assert [r["movie_key"] for r in out] == ["b", "a"]
+    assert out[0]["p_me"] > out[1]["p_me"]
+
+
+def test_mark_without_liked_is_ignored():
+    from datetime import datetime, timezone
+    from recommender.core.state import Event, replay
+
+    s = replay([Event("mark", "me", "a", None, None, datetime(2026, 1, 1, tzinfo=timezone.utc))])
+    assert not s.viewers["me"].liked and not s.viewers["me"].disliked
