@@ -1,9 +1,13 @@
 # Feast entities, feature views and the push source for the movie recommender
+import os
 from datetime import timedelta
 
 from feast import Entity, FeatureView, Field, FileSource, PushSource
 from feast.value_type import ValueType
 from feast.types import Array, Bool, Float32, Float64, String, UnixTimestamp
+
+# Garage is reached through a tunnel from the Mac, so the S3 endpoint comes from the environment (unset means AWS)
+S3_ENDPOINT = os.environ.get("FEAST_S3_ENDPOINT_URL")
 
 movie = Entity(name="movie", join_keys=["movie_key"], value_type=ValueType.STRING)
 viewer = Entity(name="viewer", join_keys=["viewer_id"], value_type=ValueType.STRING)
@@ -12,6 +16,7 @@ movies_source = FileSource(
     name="movies_parquet",
     path="s3://recommender/features/movies.parquet",
     timestamp_field="event_timestamp",
+    s3_endpoint_override=S3_ENDPOINT,
 )
 
 # Placement rewrites the whole parquet each training run, so a long TTL keeps older rows servable
@@ -39,6 +44,7 @@ viewer_taste_push = PushSource(
         name="viewer_taste_parquet",
         path="s3://recommender/feast/viewer_taste.parquet",
         timestamp_field="updated_at",
+        s3_endpoint_override=S3_ENDPOINT,
     ),
 )
 
