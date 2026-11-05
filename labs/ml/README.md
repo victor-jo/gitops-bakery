@@ -212,3 +212,5 @@ docker push localhost:30001/kfp/income-pipeline:0.1.0     # after docker login l
 ```
 
 `kfp component build` always targets amd64, which is why the Dockerfile it generated is built directly. The drift image is rebuilt the same way from `labs/ml/drift/pipeline/src` as `kfp/drift-pipeline:0.1.0`.
+
+A second exercise, a weekend movie recommender for two people (collect catalog, train matrix factorisation, serve a phone page), lives in `labs/ml/recommender/`; start with its `README.md` and `BLOG_NOTES.md`.

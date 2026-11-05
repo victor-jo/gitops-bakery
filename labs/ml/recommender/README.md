@@ -38,8 +38,7 @@ cd labs/ml/recommender
 .venv-rec/bin/python pipeline/run.py catalog
 # 2. Training: MovieLens + catalog -> MLflow run, gate, champion, features/movies.parquet
 .venv-rec/bin/python pipeline/run.py training
-# Monitoring (any time): joint thumbs-up rate and genre/taste drift -> Evidently project movie-recommender;
-# --weekly creates a recurring run for Monday 07:00 KST instead
+# Monitoring (any time): joint thumbs-up rate and genre/taste drift -> Evidently project movie-recommender
 .venv-rec/bin/python pipeline/run.py monitoring
 # 3. Feast: apply the definitions and materialize the movie features (needs the tunnels)
 bash ../feast/pf.sh                                      # Garage on 3900, Valkey on 16379
@@ -55,6 +54,31 @@ serving/run.sh                                           # prints the phone URL
 `run.sh` reads the credentials from `kubeflow/kfp-s3` when it starts the container; they are never baked into the image. The container reaches the tunnels as `host.docker.internal`, and MLflow artifacts come through the MLflow server (`MLFLOW_ENABLE_PROXY_MULTIPART_DOWNLOAD=false`), because the presigned Garage URLs do not resolve outside the cluster.
 
 The container re-applies the Feast definitions at start-up, and reloads the catalog every 6 hours. The Feast registry's file-source endpoint is whatever the last process to apply wrote: `localhost:3900` after a Mac-side `feast_config.py --apply`, `host.docker.internal:3900` after the container starts. Each process applies before it materializes, so both work, but the registry shows only the last one. A rebuild is needed only when the code changes. A new champion or catalog needs only a `docker restart movie-rec`, or a wait for the next reload.
+
+## Schedules
+
+Each pipeline takes `--schedule` to create a KFP recurring run instead of a single run:
+
+```bash
+cd labs/ml/recommender && source ../env.sh
+for p in catalog training monitoring; do .venv-rec/bin/python pipeline/run.py $p --schedule; done
+```
+
+| Recurring run | When (KST) | Cron in UTC |
+|---|---|---|
+| `movie-catalog` | every day 05:00 | `0 0 20 * * *` |
+| `movie-recommender-training` | Monday 06:00 | `0 0 21 * * 0` |
+| `movie-recommender-monitoring` | Monday 07:00 | `0 0 22 * * 0` |
+
+- Creating is idempotent: a recurring run with the same name is deleted first, so rerunning the command never leaves duplicates.
+- All three use `max_concurrency=1` and `no_catchup`. That matters most for the catalog: the first Coupang pass takes hours, and a daily trigger must not start a second crawl while one is running. After the first pass only new URLs are fetched, so the daily run is short.
+- Check them in the KFP UI (Recurring runs), or list them:
+
+```bash
+.venv-rec/bin/python -c "import os; from kfp import Client; [print(j.recurring_run_id, j.display_name, j.status, j.trigger.cron_schedule.cron) for j in Client(host=os.environ['KFP_URL']).list_recurring_runs(page_size=50).recurring_runs]"
+```
+
+The numbers from the first live runs and the end-to-end check are in `BLOG_NOTES.md`.
 
 ## Open it on the phone
 

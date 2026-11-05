@@ -50,3 +50,14 @@
 - Champion reset (once): v1 was a bootstrap model trained on a 20k-user dev sample. Most of the shared gate rows were in its training data, so it was not a fair incumbent. I deleted the `champion` alias (all versions kept) and reran the full-data training (KFP run `8778a3c7-06b9-4d80-8147-6fe13895896c`, MLflow run `b3ba5917b1e64cf19bf0d184e855385b`, 258 s, train step 120 s).
   - The run promoted itself as v4 ("no champion"): val_auc 0.7631, precision_10 0.4614, recall_10 0.8316.
   - `features/movies.parquet` was rewritten from v4 at 05:14:28 UTC: 6,727 rows, vector dim 32.
+
+## 2026-11-05 Schedules and end-to-end check
+- Recurring runs (all ENABLED, `max_concurrency=1`, no catch-up):
+  - `movie-catalog` `be3f8d75-fd34-4f01-94c6-15048b369c57`, daily 05:00 KST = `0 0 20 * * *` UTC;
+  - `movie-recommender-training` `73d8b878-4b75-4e2c-803f-d69b9c33d1d3`, Monday 06:00 KST = `0 0 21 * * 0`;
+  - `movie-recommender-monitoring` `ac744b6f-d7de-4a80-86e4-f0b498c09f7c`, Monday 07:00 KST = `0 0 22 * * 0`. Its first id was `15c5b01b-...`; running the command again replaced it, which showed the idempotency (one run per name afterwards).
+- End-to-end through the API at `http://192.168.1.60:3100`, with synthetic marks (no phone): `me` and `wife` each marked 20 onboarding posters (14 thumbs up, 6 down), plus genre choices. 45 event objects were written (40 marks, 1 watched, 2 ratings, 2 genre events); all took under 3 s in total.
+- `/api/recommendations` answered in 10 ms with 10 items, none marked, lowest `min(p_me, p_wife)` 0.602, no gamble. Titles in order: 쇼생크 탈출 (0.730), 중경삼림, 대부, 아가씨, 그을린 사랑, 대부 2, 파이트 클럽, 양들의 침묵, 반딧불의 묘, 센과 치히로의 행방불명 (0.602). Reasons read like "둘 다 좋아한 '모아나'과 비슷해요". A reason built from a movie like "Seobeuseuteonseu" shows that a few catalog titles still carry romanised names.
+- Marking the first one as watched and rating it 👍 for both removed it from the next request (still 10 items).
+- `docker restart movie-rec`: ready after 6 s, the list was identical and no marked or watched movie came back.
+- Cleanup: the 45 synthetic event objects were deleted from `s3://recommender/feedback/events/` (the prefix was empty before), and the container restarted so the couple starts clean.
