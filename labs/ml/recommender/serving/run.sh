@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Starts the latest movie-recommender image on 0.0.0.0:3100 for the phone; needs the Garage and Valkey tunnels from feast/pf.sh
+# Starts the latest movie-recommender image on 0.0.0.0:3100 for the phone, after bringing up the supervised Garage and Valkey tunnels
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source ../env.sh
-# Without the tunnels the service never finishes starting, so fail fast instead of waiting on /readyz
-for p in 3900 16379; do lsof -nP -iTCP:$p -sTCP:LISTEN >/dev/null || { echo "tunnel $p down; run labs/ml/feast/pf.sh" >&2; exit 1; }; done
+# Without the tunnels the service never finishes starting; tunnels.sh starts them (or finds them running) and fails fast
+bash serving/tunnels.sh
 key() { kubectl --context "$BAKERY_CONTEXT" -n kubeflow get secret kfp-s3 -o jsonpath="{.data.$1}" | base64 -d; }
 TAG=$(sed 's/^__tag__://' serving/.bento-tag)
 docker rm -f movie-rec >/dev/null 2>&1 || true

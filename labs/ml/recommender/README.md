@@ -33,7 +33,8 @@ export AWS_ACCESS_KEY_ID="$(key AWS_ACCESS_KEY_ID)" AWS_SECRET_ACCESS_KEY="$(key
 
 ```bash
 cd labs/ml/recommender
-# 1. Catalog: JustWatch (Netflix, Disney+) and Coupang Play -> catalog/ in Garage.
+# 1. Catalog: JustWatch (Netflix, Disney+) and Coupang Play -> catalog/ in Garage, then features/movies.parquet
+#    placed with the current champion (skipped before the first training run).
 #    The first full Coupang pass takes hours at one page per second; --max-pages caps it for a quick run.
 .venv-rec/bin/python pipeline/run.py catalog
 # 2. Training: MovieLens + catalog -> MLflow run, gate, champion, features/movies.parquet
@@ -41,19 +42,21 @@ cd labs/ml/recommender
 # Monitoring (any time): joint thumbs-up rate, genre drift and taste shift -> Evidently project movie-recommender
 .venv-rec/bin/python pipeline/run.py monitoring
 # 3. Feast: apply the definitions and materialize the movie features (needs the tunnels)
-bash ../feast/pf.sh                                      # Garage on 3900, Valkey on 16379
+serving/tunnels.sh                                       # supervised Garage on 3900, Valkey on 16379
 FEAST_S3_ENDPOINT_URL=http://localhost:3900 .venv-rec/bin/python feast_config.py --apply
 # 4. Build: bentoml build + containerize for the host architecture -> movie-recommender:<bento tag>
 serving/build.sh
-# 5. Tunnels: the container reaches Garage and Valkey through them; run.sh stops if either is down
-bash ../feast/pf.sh                                      # rerun it: a no-op when both ports already listen
-# 6. Run: docker run on the kind network, published on 0.0.0.0:3100
+# 5. Run: brings up the supervised tunnels (serving/tunnels.sh), then docker run on the kind network, 0.0.0.0:3100
 serving/run.sh                                           # prints the phone URL
 ```
 
 `run.sh` reads the credentials from `kubeflow/kfp-s3` when it starts the container; they are never baked into the image. The container reaches the tunnels as `host.docker.internal`, and MLflow artifacts come through the MLflow server (`MLFLOW_ENABLE_PROXY_MULTIPART_DOWNLOAD=false`), because the presigned Garage URLs do not resolve outside the cluster.
 
-The container re-applies the Feast definitions at start-up, and reloads the catalog every 6 hours. The Feast registry's file-source endpoint is whatever the last process to apply wrote: `localhost:3900` after a Mac-side `feast_config.py --apply`, `host.docker.internal:3900` after the container starts. Each process applies before it materializes, so both work, but the registry shows only the last one. A rebuild is needed only when the code changes. A new champion or catalog needs only a `docker restart movie-rec`, or a wait for the next reload.
+The container re-applies the Feast definitions at start-up, and reloads the catalog every 6 hours. The Feast registry's file-source endpoint is whatever the last process to apply wrote: `localhost:3900` after a Mac-side `feast_config.py --apply`, `host.docker.internal:3900` after the container starts. Each process applies before it materializes, so both work, but the registry shows only the last one. A rebuild is needed only when the code changes. The daily catalog run and the weekly training run both rewrite `features/movies.parquet`, so a new catalog or champion needs only a `docker restart movie-rec`, or a wait for the next reload.
+
+The container reaches Garage and Valkey through two Mac-side port-forwards. `serving/tunnels.sh` (run by `run.sh`) keeps each one in a `while true; do kubectl port-forward ...; sleep 2; done` loop, so a dropped forward comes back within seconds. Logs and pid files are `/tmp/movie-rec-tunnel-<port>.{log,pid}`, and a second call does not start a duplicate. If a port already listens (for example from `labs/ml/feast/pf.sh`), it is left alone and is not supervised.
+
+**Picks show but 👍/👎 fails → run `serving/tunnels.sh`.** The list is served from memory, but every mark is written to Garage and pushed to Valkey, so a dead tunnel shows up first as a failing mark.
 
 ## Schedules
 
@@ -97,7 +100,7 @@ The kind network addresses change, so the sslip.io names in `~/.gitops-bakery/st
 1. Stop `sudo cloud-provider-kind`, then `docker rm -f` every `kindccm*` container.
 2. Start `sudo cloud-provider-kind` again.
 3. Remove `ml-gateways` and `ml-platform` from `steps` in `~/.gitops-bakery/state.json` and run `npx github:victor-jo/gitops-bakery install --with-ml`.
-4. `bash labs/ml/feast/pf.sh` (the port-forwards died with the cluster), then `serving/run.sh`. It sources `env.sh` again, so the container gets the new MLflow and Evidently URLs. The image does not need a rebuild.
+4. `serving/run.sh`: its tunnel loops reconnect once the cluster answers again (it starts them if they are not running). It sources `env.sh` again, so the container gets the new MLflow and Evidently URLs. The image does not need a rebuild.
 
 ## Sources and their rules
 
