@@ -1,0 +1,18 @@
+# Bento for the movie recommender API and phone UI; built from labs/ml/recommender
+service: "serving.service:MovieRecommender"
+description: |
+  Weekend movie recommender for a couple from the gitops-bakery ML lab. Serves the phone UI at / and the JSON API
+  under /api; every 👍/👎 refolds that viewer's taste vector and pushes it to Feast.
+include:
+  - "serving/api.py"
+  - "serving/service.py"
+  - "recommender/**/*.py"
+  - "feast_config.py"
+  - "feature_repo/features.py"
+  - "web/index.html"
+  - "web/app.js"
+  - "web/style.css"
+python:
+  requirements_txt: "serving/requirements.txt"
+docker:
+  python_version: "3.13"
