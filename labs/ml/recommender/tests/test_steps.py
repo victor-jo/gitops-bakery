@@ -82,3 +82,10 @@ def test_sample_users_is_clamped_to_the_users_there_are():
     ratings = pd.DataFrame({"userId": [1, 1, 2, 3], "movieId": [5, 6, 5, 5], "rating": [4.0] * 4})
     assert len(steps._sample(ratings, 10)) == 4
     assert steps._sample(ratings, 2)["userId"].nunique() == 2
+
+
+def test_comparison_without_shared_rows_raises():
+    new = _arrays([10, 20, 30], [100, 200], [[1.0]] * 5, [[1.0], [-1.0]])
+    champion = _arrays([99], [100, 200], [[1.0]] * 3, [[1.0], [-1.0]])
+    with pytest.raises(RuntimeError, match="no holdout rows"):
+        steps.compare_on_same_rows(new, champion, _holdout())

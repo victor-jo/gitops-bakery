@@ -270,6 +270,9 @@ def compare_on_same_rows(new: dict, champion: dict, holdout: pd.DataFrame
     users = pd.Series(_user_keys(new)[holdout["user_idx"].to_numpy()]).map(champ_users)
     items = pd.Series(_item_keys(new)[holdout["item_idx"].to_numpy()]).map(champ_items)
     known = (users.notna() & items.notna()).to_numpy()
+    if not known.any():
+        raise RuntimeError("no holdout rows are known to both the new model and the champion; "
+                           "they share no users or movies, so the gate cannot compare them")
     rows = holdout[known].reset_index(drop=True)
     mapped = rows.assign(user_idx=users[known].astype(np.int64).to_numpy(),
                          item_idx=items[known].astype(np.int64).to_numpy())
