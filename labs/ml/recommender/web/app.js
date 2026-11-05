@@ -159,7 +159,6 @@ function onboardScreen() {
   const sentinel = el("div", { class: "sentinel" });
   const done = el("div", { class: "bottom" },
     el("button", { class: "primary", type: "button", onclick: () => picksScreen() }, "추천 보기"));
-  let offset = 0;
   let loading = false;
   let exhausted = false;
   let open = null;
@@ -191,9 +190,12 @@ function onboardScreen() {
     loading = true;
     status.replaceChildren(el("p", { class: "msg" }, "불러오는 중…"));
     try {
+      // The server leaves marked movies out of its list, so the offset counts only the unmarked posters shown
+      const offset = grid.querySelectorAll(".poster:not(.seen)").length;
       const items = await api("/api/onboarding?viewer=" + viewer + "&offset=" + offset + "&limit=" + PAGE);
-      offset += items.length;
+      const shown = new Set([...grid.children].map((c) => c.dataset.key));
       for (const m of items) {
+        if (shown.has(m.movie_key)) continue;
         const card = el("div", { class: "poster", "data-key": m.movie_key, role: "button", tabindex: "0" });
         poster(m, card);
         card.addEventListener("click", () => select(card));
