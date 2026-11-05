@@ -59,3 +59,14 @@ def test_too_few_matched_rows_raises():
     catalog, vecs, bias, idx = _fixture()
     with pytest.raises(ValueError, match="at least 2"):
         fit_content_model(catalog, vecs, bias, {100: 0})
+
+
+def test_texts_treat_missing_values_as_empty():
+    from recommender.model.content import _texts
+
+    catalog = pd.DataFrame({
+        "title": ["A", None, np.nan, pd.NA],
+        "description": [pd.NA, "d", np.nan, None],
+        "actors": [np.nan, None, np.array(["x", "y"]), ["z"]],
+    })
+    assert [t.split() for t in _texts(catalog)] == [["A"], ["d"], ["x", "y"], ["z"]]

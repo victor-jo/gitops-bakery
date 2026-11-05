@@ -31,9 +31,14 @@ def _dense_features(catalog: pd.DataFrame) -> sp.csr_matrix:
     return sp.csr_matrix(np.hstack([genre, decade]))
 
 
+def _text(value) -> str:
+    """A plain string, or '' for None, NaN, pd.NA and any other non-string."""
+    return value if isinstance(value, str) else ""
+
+
 def _texts(catalog: pd.DataFrame) -> list[str]:
     return [
-        f"{t or ''} {d or ''} {' '.join(a) if a is not None else ''}"
+        f"{_text(t)} {_text(d)} {' '.join(a) if isinstance(a, (list, np.ndarray)) else ''}"
         for t, d, a in zip(catalog["title"], catalog["description"], catalog["actors"])
     ]
 
