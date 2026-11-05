@@ -183,3 +183,17 @@ def test_recency_bonus_favours_recent_movies_people_actually_watch():
     cat["release_year"] = pd.array([2026, 2000, 2026], dtype="Int64")
     out = recommend(cat, 0.0, TASTE, _warm(), this_year=2026)
     assert [r["movie_key"] for r in out] == ["hit", "old", "obscure"]
+
+
+def test_each_service_keeps_two_places_when_it_has_acceptable_movies():
+    rows = [(f"n{i}", 0.9, 0.9) for i in range(10)] + [("d1", 0.6, 0.6), ("d2", 0.55, 0.55), ("d3", 0.5, 0.5),
+                                                       ("c1", 0.5, 0.5), ("cbad", 0.9, 0.2)]
+    cat = _cat(rows)
+    cat["services"] = [["nfx"]] * 10 + [["dnp"]] * 3 + [["cou"]] * 2
+    out = recommend(cat, 0.0, TASTE, _warm())
+    keys = [r["movie_key"] for r in out]
+    assert len(keys) == 10
+    assert {"d1", "d2"} <= set(keys) and "d3" not in keys
+    assert "c1" in keys and "cbad" not in keys  # a vetoed movie never takes a reserved place
+    low = [min(r["p_me"], r["p_wife"]) for r in out]
+    assert low == sorted(low, reverse=True)  # reserved places still appear in score order

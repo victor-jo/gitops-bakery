@@ -19,14 +19,21 @@ def _year(value) -> int | None:
     return None if value is None or pd.isna(value) else int(value)
 
 
-def match_coupang(coupang: pd.DataFrame, search: Callable[[str, int | None], str | None],
-                  known: dict[str, str | None]) -> pd.DataFrame:
-    """Add tmdb_id to Coupang rows; `known` caches every searched coupang_id, misses as None."""
+def match_coupang(coupang: pd.DataFrame, search: Callable[[str, int | None], dict | None],
+                  known: dict[str, dict | str | None]) -> pd.DataFrame:
+    """Add tmdb_id and release_year to Coupang rows.
+
+    `known` caches every searched coupang_id: a {"tmdb_id", "release_year"} dict, or None for a miss.
+    A bare tmdb-id string is an entry cached before release years were kept; it is searched once more.
+    """
     for cid, title, hint in zip(coupang.coupang_id, coupang.title, coupang.year_hint):
-        if cid not in known:
-            known[cid] = _tmdb(search(title, _year(hint)))
+        if cid not in known or isinstance(known[cid], str):
+            found = search(title, _year(hint))
+            known[cid] = ({"tmdb_id": _tmdb(found["tmdb_id"]), "release_year": _year(found.get("release_year"))}
+                          if found else None)
     out = coupang.copy()
-    out["tmdb_id"] = [known[c] for c in out.coupang_id]
+    out["tmdb_id"] = [(known[c] or {}).get("tmdb_id") for c in out.coupang_id]
+    out["release_year"] = pd.array([(known[c] or {}).get("release_year") for c in out.coupang_id], dtype="Int64")
     return out
 
 
@@ -82,7 +89,10 @@ def build_catalog(justwatch: pd.DataFrame, coupang: pd.DataFrame, new: pd.DataFr
         c = cp[cp.key == key]
         first = j.iloc[0] if len(j) else c.iloc[0]
         poster = next((p for p in [*j.poster_url, *c.poster_url] if isinstance(p, str) and p), None)
-        year = _year(first.release_year) if len(j) else _year(first.year_hint)
+        if len(j):
+            year = _year(first.release_year)
+        else:  # Coupang only: the year from its TMDB match, else a "(1996)" hint in its title
+            year = _year(first.get("release_year")) or _year(first.year_hint)
         day = added.get(key)
         tmdb = first.tmdb_id
         rows.append({

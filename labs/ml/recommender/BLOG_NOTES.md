@@ -74,3 +74,9 @@ After trying it, the owner wanted recent releases to come up more. Two changes:
 - "Mark what you've seen" grid: newest release year first, then the more popular one; movies with no known year go last.
 - Tuned on the owner's 17 real marks: at 0.15 all ten picks were still 1972–2010 classics; at 0.3 the list mixes about half 2026 releases with the top classics; at 0.5 every pick is a 2026 release. Set to 0.3. Why the bonus has to be this large: post-2019 movies have no MovieLens ratings and their Ridge-placed vectors sit near the average, so their best lower score is about 0.56 against 0.86 for the best classic.
 - Then weighted by popularity: the bonus became `RECENCY_BONUS × recency × popularity_kr` with `RECENCY_BONUS = 0.33`, because at a flat 0.3 the recent picks were obscure titles (every placed post-2019 vector scores about the same). On the same 17 marks the list became five classics (쇼생크 탈출, 대부, 파이트 클럽, 양들의 침묵, 대부 2) and five 2026 titles high in the Korean charts.
+
+## 2026-11-05 — fair places for each OTT
+
+Checked first: Korean popularity was already even between services (2026 releases average 0.60 on Netflix, 0.59 on Disney+; 토이 스토리 5 is 0.997). Disney+ family titles were missing from the picks because the marks so far lean to action/crime, and Coupang had only 144 movies (the full crawl is still running) with a release year for 22 of them.
+- Each service now keeps `MIN_PER_SERVICE = 2` places among the ten picks, filled only with movies that pass the veto, and the list is still shown in score order.
+- Coupang titles take their release year from the JustWatch/TMDB match (the match cache now stores `{tmdb_id, release_year}`; entries cached before this are searched once more), so recent Coupang movies get the recency bonus too.

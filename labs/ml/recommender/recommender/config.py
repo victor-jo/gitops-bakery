@@ -3,6 +3,8 @@ VETO_P = 0.35
 STRONG_DISLIKE_P = 0.20
 MIN_RESULTS = 5
 MAX_RESULTS = 10
+# Each service keeps this many places in the picks when it has movies that pass the veto
+MIN_PER_SERVICE = 2
 LIKE_RATING = 4.0
 # Newer releases rank higher: a movie from this year gets RECENCY_BONUS × its Korean popularity (0..1)
 # added to its ranking score, fading linearly to nothing for movies RECENCY_YEARS or more years old.

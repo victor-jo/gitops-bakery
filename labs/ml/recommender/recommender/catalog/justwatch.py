@@ -152,8 +152,8 @@ def _norm(title: str) -> str:
     return re.sub(r"[\W_]+", "", t)
 
 
-def search_tmdb_id(title: str, year: int | None, post: Post) -> str | None:
-    """Look a title up by name and return its tmdb id only on an exact normalized match within one year."""
+def search_title(title: str, year: int | None, post: Post) -> dict | None:
+    """Look a title up by name; on an exact normalized match within one year return its tmdb id and release year."""
     conn = post(_SEARCH, {"country": COUNTRY, "first": 10, "q": title})["data"]["popularTitles"]
     want = _norm(title)
     for e in conn["edges"]:
@@ -165,5 +165,11 @@ def search_tmdb_id(title: str, year: int | None, post: Post) -> str | None:
             continue
         tmdb = (c["externalIds"] or {}).get("tmdbId")
         if tmdb:
-            return tmdb
+            return {"tmdb_id": tmdb, "release_year": y}
     return None
+
+
+def search_tmdb_id(title: str, year: int | None, post: Post) -> str | None:
+    """Like search_title, but only the tmdb id."""
+    found = search_title(title, year, post)
+    return found["tmdb_id"] if found else None

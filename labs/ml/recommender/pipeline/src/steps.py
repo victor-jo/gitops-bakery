@@ -138,7 +138,7 @@ def match_and_build() -> int:
             s3.put_json(known, COUPANG_MATCHES)
         searched += 1
         time.sleep(JW_PAUSE)
-        return jw.search_tmdb_id(title, year, jw.http_post)
+        return jw.search_title(title, year, jw.http_post)
 
     try:
         matched = match_coupang(movies, search, known)

@@ -91,15 +91,38 @@ def test_match_coupang_never_searches_a_coupang_id_twice():
 
     def search(title, year):
         calls.append((title, year))
-        return {"A": "11", "B": None}.get(title)
+        return {"A": {"tmdb_id": "11", "release_year": 2020}, "B": None}.get(title)
 
-    known = {"c3": "33"}
+    known = {"c3": {"tmdb_id": "33", "release_year": 2001}}
     out = match_coupang(cp, search, known)
     assert calls == [("A", 2020), ("B", None)]
     assert list(out.tmdb_id) == ["11", None, "33"]
-    assert known == {"c1": "11", "c2": None, "c3": "33"}
+    assert out.release_year.tolist() == [2020, pd.NA, 2001]
+    assert known["c2"] is None
     match_coupang(cp, search, known)
     assert len(calls) == 2
+
+
+def test_match_coupang_upgrades_old_cache_entries_once_to_learn_the_year():
+    cp = _cp([["c1", "movie", "A", float("nan"), [], "", [], None, 1, None, None]])
+    calls = []
+
+    def search(title, year):
+        calls.append(title)
+        return {"tmdb_id": "11", "release_year": 2026}
+
+    known = {"c1": "11"}  # written before release years were cached
+    out = match_coupang(cp, search, known)
+    assert calls == ["A"] and list(out.release_year) == [2026]
+    match_coupang(cp, search, known)
+    assert calls == ["A"]
+
+
+def test_a_coupang_only_movie_takes_its_matched_release_year():
+    cp = _cp([["c1", "movie", "새 영화", float("nan"), ["drama"], "cp", [], None, 5, None, None]])
+    cp["release_year"] = [2026]
+    out = build_catalog(_jw([]), cp, NEW, LINKS, TODAY)
+    assert out.release_year.iloc[0] == 2026
 
 
 class FakeClient:

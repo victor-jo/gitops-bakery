@@ -1,7 +1,7 @@
 # Tests for the JustWatch collector using a fake paging GraphQL post function
 from datetime import date
 
-from recommender.catalog.justwatch import fetch_service, new_titles, search_tmdb_id
+from recommender.catalog.justwatch import fetch_service, new_titles, search_title, search_tmdb_id
 
 
 def _node(oid, title, year, tmdb, score=1.0, genres=("drm",), poster=True):
@@ -112,3 +112,8 @@ def test_new_titles_queries_each_package_and_stamps_service(monkeypatch):
 
     df = new_titles(date(2026, 11, 5), ["nfx", "dnp"], post)
     assert list(df.service) == ["nfx", "dnp"] and list(df.justwatch_id) == ["nfx1", "dnp1"]
+
+
+def test_search_title_returns_the_release_year_with_the_tmdb_id():
+    assert search_title("기생충", None, _search_post("기생충", 2019)) == {"tmdb_id": "496243", "release_year": 2019}
+    assert search_title("기생충", 2019, _search_post("기생충", 2015)) is None

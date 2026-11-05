@@ -6,7 +6,7 @@ import pandas as pd
 
 from datetime import datetime, timedelta, timezone
 
-from recommender.config import (MAX_RESULTS, MIN_RESULTS, RECENCY_BONUS, RECENCY_YEARS, SERVICES,
+from recommender.config import (MAX_RESULTS, MIN_PER_SERVICE, MIN_RESULTS, RECENCY_BONUS, RECENCY_YEARS, SERVICES,
                                 STRONG_DISLIKE_P, VETO_P, VIEWERS)
 from recommender.core.state import CoupleState
 from recommender.genres import KOREAN_LABEL
@@ -103,8 +103,8 @@ def recommend(
         if has_taste[vid] or not cold:
             veto |= probs[vid] < VETO_P
     survivors = np.flatnonzero(eligible & ~veto)
-    survivors = survivors[np.argsort(-score[survivors], kind="stable")][:MAX_RESULTS]
-    picked = [(int(i), False) for i in survivors]
+    survivors = survivors[np.argsort(-score[survivors], kind="stable")]
+    picked = [(int(i), False) for i in _with_service_places(survivors, catalog["services"].tolist(), score)]
 
     if len(picked) < MIN_RESULTS:
         floor = np.ones(n, dtype=bool)
@@ -119,6 +119,20 @@ def recommend(
     return [
         _entry(catalog, i, g, probs, unit, key_row, couple, genres[i]) for i, g in picked
     ]
+
+
+def _with_service_places(ranked: np.ndarray, services: list, score: np.ndarray) -> list[int]:
+    """The top MAX_RESULTS of `ranked`, after first reserving MIN_PER_SERVICE places for each service."""
+    chosen: list[int] = []
+    for svc in SERVICES:
+        on_svc = [int(i) for i in ranked if svc in services[i] and int(i) not in chosen]
+        chosen += on_svc[:MIN_PER_SERVICE]
+    for i in ranked:
+        if len(chosen) >= MAX_RESULTS:
+            break
+        if int(i) not in chosen:
+            chosen.append(int(i))
+    return sorted(chosen[:MAX_RESULTS], key=lambda i: -score[i])
 
 
 def _nearest(unit: np.ndarray, row: int, liked_keys, key_row: dict) -> int | None:
