@@ -1,6 +1,6 @@
 # Weekend movie recommender
 
-A movie recommender for two people, `me` (나) and `wife` (아내), built on the ML lab. It collects what Netflix, Disney+ and Coupang Play show in Korea, trains a matrix-factorisation model on MovieLens 25M, and serves a phone page on the home Wi-Fi. Each person marks posters 👍 or 👎. The page then lists this weekend's movies that both of them should like: a movie is dropped when either person's predicted like-probability is below 0.35.
+A movie recommender for two people, `me` (나) and `wife` (아내), built on the ML lab. It collects what Netflix, Disney+ and Coupang Play show in Korea, trains a matrix-factorisation model on MovieLens 25M, and serves a phone page on the home Wi-Fi. Each person marks posters 👍 or 👎. The page then lists this weekend's movies that both of them should like: a movie is dropped when either person's predicted like-probability is below 0.35. After those picks it keeps going with the movies most watched in Korea.
 
 | Piece | Where |
 |---|---|
@@ -90,6 +90,15 @@ The numbers from the first live runs and the end-to-end check are in `BLOG_NOTES
 On the Mac itself use `http://127.0.0.1:3100`, not `localhost`: OrbStack also listens on `::1` for the mapped port but never answers there.
 
 The page has four screens: choose a profile, pick favourite genres, mark posters 👍/👎, and this weekend's candidates. After watching one, press "같이 봤어요" and both rate it.
+
+The candidates screen scrolls without end, 20 movies per page of `/api/recommendations?offset=&limit=`. Each item says where it came from:
+
+- `"source": "pick"`: both viewers pass the veto. Picks come first, newest release year first, and movies without a known year come last. Within a year they go by score: the lower of the two like-probabilities (Korean popularity before anyone has given feedback), plus the Korean-film bonus and the recency bonus, which within a year favours the movies more people watch.
+- `"source": "popular"`: the movies the veto caught, most popular in Korea first, shown under an '인기' divider. A movie still never appears when a viewer's like-probability is below 0.20.
+
+Watched and marked movies are never listed. When both lists run out the screen ends with '더 이상 없어요.'.
+
+This replaced the old fixed list of ten. Every movie that passes the veto is now listed, so the two places per service among the ten (`MIN_PER_SERVICE`) are gone, since keeping them would break the year order. The 조금 모험 refill up to five (`MIN_RESULTS`) is gone too: those movies are now part of the popular list.
 
 Every mark is an event in `s3://recommender/feedback/events/`, one JSON object per mark, so the couple's state survives a restart or a rebuild. The same marks refold that person's taste vector in the service and push it to Feast (`viewer_taste`).
 
