@@ -89,3 +89,30 @@ def test_comparison_without_shared_rows_raises():
     champion = _arrays([99], [100, 200], [[1.0]] * 3, [[1.0], [-1.0]])
     with pytest.raises(RuntimeError, match="no holdout rows"):
         steps.compare_on_same_rows(new, champion, _holdout())
+
+
+class _FakeContent:
+    def place(self, catalog):
+        return np.ones((len(catalog), 4), np.float32), np.zeros(len(catalog), np.float32)
+
+
+def test_place_catalog_stamps_every_row_with_a_utc_event_time(tmp_path, monkeypatch):
+    import pickle
+    import types
+
+    (tmp_path / "artifacts").mkdir()
+    with open(tmp_path / "artifacts" / "content.pkl", "wb") as f:
+        pickle.dump(_FakeContent(), f)
+    fake = types.SimpleNamespace(artifacts=types.SimpleNamespace(download_artifacts=lambda *a, **k: str(tmp_path)))
+    monkeypatch.setitem(sys.modules, "mlflow", fake)
+    written = {}
+    monkeypatch.setattr(steps.s3, "read_parquet", lambda key: pd.DataFrame({"movie_key": ["a", "b"]}))
+    monkeypatch.setattr(steps.s3, "write_parquet", lambda df, key: written.update(df=df, key=key))
+
+    before = pd.Timestamp.now(tz="UTC")
+    steps.place_catalog()
+    after = pd.Timestamp.now(tz="UTC")
+
+    stamp = written["df"]["event_timestamp"]
+    assert str(stamp.dt.tz) == "UTC"
+    assert stamp.nunique() == 1 and before <= stamp.iloc[0] <= after

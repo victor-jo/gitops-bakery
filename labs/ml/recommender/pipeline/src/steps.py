@@ -359,7 +359,8 @@ def place_catalog() -> int:
         with open(os.path.join(local, "artifacts", "content.pkl"), "rb") as f:
             content = pickle.load(f)
     vecs, bias = content.place(catalog)
-    features = catalog.assign(vector=list(vecs), bias=bias.astype(float))
+    # Feast's file source needs a timestamp column; every row shares the time this placement ran
+    features = catalog.assign(vector=list(vecs), bias=bias.astype(float), event_timestamp=pd.Timestamp.now(tz="UTC"))
     s3.write_parquet(features, FEATURES)
     print(f"features: {len(features)} movies, vector dim {vecs.shape[1]}")
     return len(features)
