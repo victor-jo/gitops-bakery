@@ -6,6 +6,7 @@ const VIEWERS = [
   { id: "wife", label: "🙋‍♀️ 아내", name: "아내" },
 ];
 const PAGE = 30;
+const PICKS_PAGE = 20;
 const FETCH_TIMEOUT_MS = 15000;
 
 const screen = document.getElementById("screen");
@@ -226,30 +227,67 @@ function onboardScreen() {
 }
 
 // ---- 4. weekend picks ----
+// Picks newest first, then the popular fallback under an '인기' divider, loaded page by page while scrolling.
 function picksScreen() {
   if (!viewer) { profileScreen(); return; }
-  guarded(async () => {
-    const picks = await api("/api/recommendations");
-    if (picks.length === 0) {
-      show(el("h1", {}, "이번 주말 후보"),
-        el("p", { class: "msg" }, "아직 추천할 영화가 없어요. 장르를 고르고 본 영화를 표시해 보세요."),
-        el("button", { class: "primary block", type: "button", onclick: () => genresScreen() }, "장르 고르기"));
-      return;
+  const list = el("div", {});
+  const status = el("div", {});
+  const sentinel = el("div", { class: "sentinel" });
+  let loading = false;
+  let exhausted = false;
+
+  async function more() {
+    if (loading || exhausted) return;
+    loading = true;
+    status.replaceChildren(el("p", { class: "msg" }, "불러오는 중…"));
+    try {
+      // A movie marked watched leaves the server's list, so the offset counts only the cards still in it
+      const offset = list.querySelectorAll(".pick:not(.watched)").length;
+      const items = await api("/api/recommendations?offset=" + offset + "&limit=" + PICKS_PAGE);
+      const shown = new Set([...list.querySelectorAll(".pick")].map((c) => c.dataset.key));
+      for (const m of items) {
+        if (shown.has(m.movie_key)) continue;
+        if (m.source === "popular" && !list.querySelector(".divider")) {
+          list.append(el("h2", { class: "divider" }, "인기"));
+        }
+        list.append(pickCard(m));
+      }
+      exhausted = items.length < PICKS_PAGE;
+      if (exhausted && !list.querySelector(".pick")) {
+        status.replaceChildren(
+          el("p", { class: "msg" }, "아직 추천할 영화가 없어요. 장르를 고르고 본 영화를 표시해 보세요."),
+          el("button", { class: "primary block", type: "button", onclick: () => genresScreen() }, "장르 고르기"));
+      } else {
+        status.replaceChildren(...(exhausted ? [el("p", { class: "msg" }, "더 이상 없어요.")] : []));
+      }
+    } catch (e) {
+      status.replaceChildren(errorBox(() => { status.replaceChildren(); more(); }));
+    } finally {
+      loading = false;
     }
-    show(el("h1", {}, "이번 주말 후보"), ...picks.map(pickCard));
-  });
+    // Observing again reports the sentinel's current state, so a page too short to fill the screen loads the next
+    if (!exhausted && observer === io) { io.unobserve(sentinel); io.observe(sentinel); }
+  }
+
+  show(el("h1", {}, "이번 주말 후보"), list, status, sentinel);
+  const io = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)) more();
+  }, { rootMargin: "400px" });
+  observer = io;
+  io.observe(sentinel);
 }
 
 function pickCard(m) {
   const badges = el("div", {}, ...m.services.map((s) => el("span", { class: "badge" }, s)));
   if (m.new_this_week) badges.append(el("span", { class: "badge new" }, "이번 주 새로 올라옴"));
-  if (m.gamble) badges.append(el("span", { class: "badge gamble" }, "조금 모험"));
   const actions = el("div", { class: "actions" });
   const watched = el("button", { type: "button" }, "같이 봤어요");
+  const card = el("section", { class: "pick", "data-key": m.movie_key });
   const send = async () => {
     watched.disabled = true;
     try {
       await api("/api/watched", { movie_key: m.movie_key });
+      card.classList.add("watched");
       rateWatched(actions, m);
     } catch (e) {
       watched.disabled = false;
@@ -258,10 +296,11 @@ function pickCard(m) {
   };
   watched.addEventListener("click", send);
   actions.append(watched);
-  return el("section", { class: "pick" },
+  card.append(
     poster(m),
     el("div", { class: "info" }, el("h2", {}, m.title), badges, el("p", { class: "reason" }, m.reason)),
     actions);
+  return card;
 }
 
 // After "watched": one 👍/👎 row per person; refresh the picks once both have answered.

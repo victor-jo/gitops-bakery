@@ -1,7 +1,7 @@
 /* Mobile-first styles for the weekend movie picker, light and dark */
 :root {
   --bg: #fafafa; --fg: #1a1a1a; --muted: #6b6b6b; --card: #fff; --line: #d4d4d4;
-  --accent: #3b82f6; --accent-fg: #fff; --ok: #22c55e; --warn: #f59e0b;
+  --accent: #3b82f6; --accent-fg: #fff; --ok: #22c55e;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #121212; --fg: #ececec; --muted: #9a9a9a; --card: #1e1e1e; --line: #3a3a3a; }
@@ -64,13 +64,13 @@ button.block { display: block; width: 100%; margin-bottom: 12px; font-size: 1.1r
   border: 1px solid var(--line); border-radius: 12px;
 }
 .badge.new { border-color: var(--ok); color: var(--ok); }
-.badge.gamble { border-color: var(--warn); color: var(--warn); }
 .reason { color: var(--muted); font-size: .9rem; margin: 6px 0 0; }
 .pick .actions { flex-basis: 100%; }
 .who { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .who span { flex: 1; }
 .who button { flex: none; }
 .who button.picked { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.divider { font-size: 1rem; color: var(--muted); margin: 20px 0 8px; padding-top: 12px; border-top: 1px solid var(--line); }
 .msg { text-align: center; padding: 32px 0; color: var(--muted); }
 .err { text-align: center; padding: 24px 0; }
 .err p { margin: 0 0 12px; }
