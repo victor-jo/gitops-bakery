@@ -88,3 +88,47 @@ Checked first: Korean popularity was already even between services (2026 release
 - "Mark what you've seen": within the same release year, Korean films come first.
 - Unmatched Coupang titles have no original title, so they are never flagged Korean even when they are.
 - Tuned on the real marks with the 9,651-movie catalog (1,082 Korean): 0.1 gave 2 Korean films in ten, 0.2 gave 7 (올드보이, 파묘, 차라리 죽여, 살인자 리포트, …) with 쇼생크 탈출 and one Disney+ pair kept, 0.3 gave 10 of 10. Set to 0.2.
+
+## 2026-11-05 — hybrid model: metadata as model inputs
+
+Question: does the model get better if genres, release year, the Korean flag and popularity are inputs instead of only ranking rules after scoring? The `hybrid` model type adds a learned linear map of those features to each item's id vector and bias (design in `README.md`, "Model: plain MF or hybrid").
+
+- Run on the Mac from the task copy against the lab data (Garage through the 3900 tunnel, context `kind-honeyed-bagel`): a sampled run first (20,000 users), then full data. Same BCE setup, 5 epochs, dim 32. Train step on the Mac: 26 s for the MF, 27 s for the hybrid (full data).
+- Logged to the MLflow experiment `movie-recommender-hybrid-exp`, not `movie-recommender`. No model version was registered, `champion` still points at v6, and no KFP schedule changed.
+- Compared through the gate's own code (`compare_on_same_rows` + `should_promote`). The full-data split is deterministic, so the holdout is the champion's own: 6,250,024 shared val/test rows. The couple rule did not apply: the 7 current marks are all on movies without a MovieLens id.
+
+Full data, same 6,250,024 rows:
+
+| model | MLflow run | val_auc | precision@10 | recall@10 |
+|---|---|---|---|---|
+| champion v6 (MF) | `c7b54502…` | 0.7631 | 0.4614 | 0.8316 |
+| MF retrained here | `e105ad48…` | 0.7631 | 0.4614 | 0.8316 |
+| MF, 1 epoch | `c991603d…` | 0.7616 | 0.4611 | 0.8315 |
+| MF, 2 epochs | `d3d379d7…` | 0.7621 | 0.4612 | 0.8315 |
+| **hybrid** | `04cc5c6f…` | **0.8029** | **0.4671** | **0.8357** |
+| hybrid, popularity column only | `8695f1e7…` | 0.7869 | 0.4608 | 0.8311 |
+| hybrid, metadata only (no popularity) | `bc83003e…` | 0.7995 | 0.4663 | 0.8351 |
+
+- Gate verdict for hybrid vs. champion: "all gates passed" (+0.040 val_auc, +0.0057 precision@10). It was not registered or promoted. Promotion is a separate decision.
+- Sampled run (20,000 users, 769,536 shared rows): MF `b67472df…` 0.8117 / 0.4713 / 0.8339 → hybrid `8c041fe3…` 0.8196 / 0.4758 / 0.8379.
+- The MF at 1 or 2 epochs is no better than at 5, so the gain is not the epoch-count overfitting suspected after the first full run. A tuned weight decay or learning rate was not tried.
+- Most of the gain comes from genres, decade and the Korean flag: metadata alone reaches 0.7995 / 0.4663. Popularity alone lifts val_auc to 0.7869 but leaves precision@10 flat.
+
+Item-vector spectrum, the check that first showed the champion's vectors are close to rank-1. The catalog's 9,651 movies are placed by each run's own content model, in memory; `features/movies.parquet` was not written. The first-axis figure is the first singular value's share of the sum of singular values of the centered vectors, the measure behind the earlier "81%". The true variance share (squared singular values) is in brackets.
+
+| model | first axis, all | MovieLens movies | placed movies | 토이 스토리: cos ≥ 0.7 / ≥ 0.9 | 어쩔수가없다: cos ≥ 0.7 / ≥ 0.9 |
+|---|---|---|---|---|---|
+| champion v6 | 81.1% (98.9%) | 80.4% | 84.9% | 6,340 / 5,717 | 6,341 / 5,716 |
+| hybrid | 18.3% (36.7%) | 16.9% | 17.2% | 875 / 57 | 6,493 / 2,228 |
+| hybrid, popularity only | 96.4% | 95.1% | 97.8% | 4,893 / 4,860 | 4,703 / 4,673 |
+| hybrid, metadata only | 15.7% | 14.8% | 17.0% | 1,665 / 168 | 8,090 / 2,712 |
+
+- The champion's item space is almost one popularity axis: 토이 스토리's nearest neighbours tie at 1.00 (피노키오, 오션스 일레븐, 캐리비안의 해적, …). With the hybrid they are 토이 스토리 2 (0.997), 개미, 벅스 라이프, 알라딘, 팀 버튼의 크리스마스 악몽.
+- Placed movies improve less. 어쩔수가없다 (2025, no MovieLens data) still has 6,493 movies at ≥ 0.7, though only 2,228 at ≥ 0.9 instead of 5,716. Its vector still comes from the Ridge content model, which regresses toward the average.
+
+Conclusion: yes. With the metadata as inputs, the model beats the champion on the same rows under the existing gate, and its item vectors stop collapsing onto one axis. The gain comes from genres, decade and the Korean flag, not from popularity.
+
+Caveats:
+- The Korean flag covers only the 388 MovieLens movies in today's catalog.
+- The couple AUC could not be measured yet.
+- Cold catalog movies still go through the Ridge. Placing them with the hybrid's own feature map (`W f`) is the natural next experiment.
