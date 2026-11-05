@@ -56,3 +56,20 @@ def test_training_has_the_four_steps(tmp_path):
     spec = _compile(movie_recommender_training, tmp_path / "t.yaml")[0]
     tasks = set(spec["root"]["dag"]["tasks"])
     assert {"prepare-movielens", "train", "evaluate-and-gate", "place-catalog"} <= tasks
+
+
+def test_monitoring_pipeline_has_one_step_and_the_evidently_url(tmp_path):
+    from monitoring_pipeline import movie_recommender_monitoring
+
+    docs = _compile(movie_recommender_monitoring, tmp_path / "m.yaml")
+    assert docs[0]["pipelineInfo"]["name"] == "movie-recommender-monitoring"
+    assert set(docs[0]["root"]["dag"]["tasks"]) == {"report-monitoring"}
+    assert "evidently-service-internal.evidently.svc.cluster.local" in (tmp_path / "m.yaml").read_text()
+
+
+def test_weekly_cron_is_monday_0700_kst_in_utc():
+    from schedule import WEEKLY_CRON, weekly_cron_utc
+
+    assert WEEKLY_CRON == "0 0 22 * * 0"  # Sunday 22:00 UTC
+    assert weekly_cron_utc(weekday=1, hour=3, minute=30) == "0 30 18 * * 0"  # crosses back one day
+    assert weekly_cron_utc(weekday=0, hour=2) == "0 0 17 * * 6"  # Sunday 02:00 KST wraps to Saturday

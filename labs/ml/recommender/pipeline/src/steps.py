@@ -364,3 +364,12 @@ def place_catalog() -> int:
     s3.write_parquet(features, FEATURES)
     print(f"features: {len(features)} movies, vector dim {vecs.shape[1]}")
     return len(features)
+
+
+# ---------- monitoring ----------
+
+def report_monitoring() -> None:
+    """Send the weekly joint thumbs-up rate and genre/taste drift to Evidently."""
+    from recommender import monitoring
+
+    monitoring.run(os.environ["EVIDENTLY_URL"])

@@ -56,3 +56,10 @@ def place_catalog() -> int:
     from steps import place_catalog as run
 
     return run()
+
+
+@dsl.component(base_image=BASE, target_image=IMAGE)
+def report_monitoring():
+    from steps import report_monitoring as run
+
+    run()
