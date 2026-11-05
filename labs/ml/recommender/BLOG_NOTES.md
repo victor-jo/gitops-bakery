@@ -47,3 +47,6 @@
   - champion v1: val_auc 0.8226, precision_10 0.4731, recall_10 0.8368.
   - v3 was not promoted, and v1 stays champion.
   - v1 scores higher here than on its own holdout (0.8117), because many of the shared rows were in v1's training split. A sampled champion against a full-data candidate is still not a clean comparison.
+- Champion reset (once): v1 was a bootstrap model trained on a 20k-user dev sample. Most of the shared gate rows were in its training data, so it was not a fair incumbent. I deleted the `champion` alias (all versions kept) and reran the full-data training (KFP run `8778a3c7-06b9-4d80-8147-6fe13895896c`, MLflow run `b3ba5917b1e64cf19bf0d184e855385b`, 258 s, train step 120 s).
+  - The run promoted itself as v4 ("no champion"): val_auc 0.7631, precision_10 0.4614, recall_10 0.8316.
+  - `features/movies.parquet` was rewritten from v4 at 05:14:28 UTC: 6,727 rows, vector dim 32.
