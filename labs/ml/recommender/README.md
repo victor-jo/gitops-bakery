@@ -38,7 +38,7 @@ cd labs/ml/recommender
 .venv-rec/bin/python pipeline/run.py catalog
 # 2. Training: MovieLens + catalog -> MLflow run, gate, champion, features/movies.parquet
 .venv-rec/bin/python pipeline/run.py training
-# Monitoring (any time): joint thumbs-up rate and genre/taste drift -> Evidently project movie-recommender
+# Monitoring (any time): joint thumbs-up rate, genre drift and taste shift -> Evidently project movie-recommender
 .venv-rec/bin/python pipeline/run.py monitoring
 # 3. Feast: apply the definitions and materialize the movie features (needs the tunnels)
 bash ../feast/pf.sh                                      # Garage on 3900, Valkey on 16379

@@ -1,4 +1,4 @@
-# Tests for the weekly monitoring frames: joint thumbs-up flags, genre shares, taste rows and snapshot picking
+# Tests for the weekly monitoring frames: joint thumbs-up flags, genre shares, taste shift, snapshot picking and panels
 from datetime import date, datetime, timedelta, timezone
 
 import numpy as np
@@ -67,10 +67,16 @@ def test_genre_mix_shares_sum_to_one_over_every_canonical_genre():
     assert abs(mix.set_index("genre")["share"]["drama"] - 2 / 3) < 1e-12
 
 
-def test_taste_rows_per_viewer_with_d_columns():
-    t = _frames([])["taste_now"]
-    assert t.index.tolist() == ["me", "wife"] and t.columns.tolist() == ["d0", "d1"]
-    assert t.loc["wife", "d1"] == 4.0
+def test_taste_shift_is_the_cosine_distance_per_viewer():
+    before = {"me": np.array([1.0, 0.0]), "wife": np.array([3.0, 4.0])}
+    now = {"me": np.array([0.0, 2.0]), "wife": np.array([6.0, 8.0])}
+    shift = weekly_frames([], CAT, CAT, now, before)["taste_shift"]
+    assert shift.columns.tolist() == ["taste_shift_me", "taste_shift_wife"] and len(shift) == 1
+    assert abs(shift["taste_shift_me"][0] - 1.0) < 1e-12  # orthogonal
+    assert abs(shift["taste_shift_wife"][0]) < 1e-12  # same direction
+    zero = weekly_frames([], CAT, CAT, {"me": np.zeros(2), "wife": np.zeros(2)},
+                         {"me": np.zeros(2), "wife": np.zeros(2)})["taste_shift"]
+    assert zero.iloc[0].tolist() == [0.0, 0.0]
 
 
 def test_pick_history_takes_newest_at_least_a_week_old_else_oldest():
@@ -93,6 +99,60 @@ def test_taste_before_ignores_later_marks():
 def test_snapshot_builds_without_watched_events():
     from recommender.monitoring import build_snapshot
 
-    names = [m["metric_name"] for m in build_snapshot(_frames([])).dict()["metrics"]]
+    metrics = build_snapshot(_frames([])).dict()["metrics"]
+    names = [m["metric_name"] for m in metrics]
     assert "MeanValue(column=joint_like_rate)" in names
+    assert "MeanValue(column=taste_shift_me)" in names and "MeanValue(column=taste_shift_wife)" in names
     assert any(n.startswith("DriftedColumnsCount") for n in names)
+    # Only the genre column is drift-tested; taste columns are reported as values instead
+    drift = [n for n in names if n.startswith("ValueDrift")]
+    assert drift and all("genre" in n for n in drift)
+
+
+class _Dashboard:
+    def __init__(self, ws):
+        self.ws = ws
+
+    def add_panel(self, panel):
+        self.ws.board.panels.append(panel)
+        self.ws.board.tabs[0].panels.append(panel.id)
+
+
+class _Workspace:
+    """In-memory stand-in for the Evidently workspace's project and dashboard calls."""
+
+    def __init__(self, titles):
+        from types import SimpleNamespace as NS
+
+        from evidently.sdk.models import DashboardModel, DashboardPanelPlot, DashboardTabModel
+
+        panels = [DashboardPanelPlot(title=t, subtitle=None, size=None, values=[]) for t in titles]
+        self.board = DashboardModel(tabs=[DashboardTabModel(title="General", panels=[p.id for p in panels])],
+                                    panels=panels)
+        self.project = NS(id="p1", dashboard=_Dashboard(self))
+        self.saved = 0
+
+    def search_project(self, name):
+        return [self.project]
+
+    def get_dashboard(self, project_id):
+        return self.board.copy(deep=True)
+
+    def save_dashboard(self, project_id, dashboard):
+        self.saved += 1
+        self.board = dashboard
+
+
+def test_ensure_project_replaces_obsolete_panels_once():
+    from recommender import monitoring as m
+
+    ws = _Workspace(["Joint thumbs-up rate (last run)", m.WATCHED_PANEL, "Share of drifted columns"])
+    m.ensure_project(ws, "movie-recommender")
+    titles = [p.title for p in ws.board.panels]
+    assert sorted(titles) == sorted([m.WATCHED_PANEL, m.JOINT_PANEL, m.DRIFT_PANEL, m.TASTE_PANEL])
+    assert ws.board.tabs[0].panels == [p.id for p in ws.board.panels]
+    taste = next(p for p in ws.board.panels if p.title == m.TASTE_PANEL)
+    assert [v.metric_labels["column"] for v in taste.values] == ["taste_shift_me", "taste_shift_wife"]
+    saved = ws.saved
+    m.ensure_project(ws, "movie-recommender")
+    assert [p.title for p in ws.board.panels] == titles and ws.saved == saved  # second run changes nothing

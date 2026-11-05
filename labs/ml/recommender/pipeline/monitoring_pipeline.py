@@ -1,4 +1,4 @@
-# Monitoring pipeline: the couple's joint thumbs-up rate and genre/taste drift sent to Evidently
+# Monitoring pipeline: the couple's joint thumbs-up rate, genre drift and taste shift sent to Evidently
 import sys
 from pathlib import Path
 
@@ -12,7 +12,7 @@ from wiring import wire  # noqa: E402
 EVIDENTLY = "http://evidently-service-internal.evidently.svc.cluster.local:8000"
 
 
-@dsl.pipeline(name="movie-recommender-monitoring", description="Report the joint thumbs-up rate and genre and taste drift to Evidently")
+@dsl.pipeline(name="movie-recommender-monitoring", description="Report the joint thumbs-up rate, genre drift and taste shift to Evidently")
 def movie_recommender_monitoring():
     wire(report_monitoring(), memory="2Gi").set_env_variable("EVIDENTLY_URL", EVIDENTLY)
 

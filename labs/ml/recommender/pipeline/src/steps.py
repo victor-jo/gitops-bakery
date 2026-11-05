@@ -418,7 +418,7 @@ def place_catalog() -> int:
 # ---------- monitoring ----------
 
 def report_monitoring() -> None:
-    """Send the weekly joint thumbs-up rate and genre/taste drift to Evidently."""
+    """Send the weekly joint thumbs-up rate, genre drift and taste shift to Evidently."""
     from recommender import monitoring
 
     monitoring.run(os.environ["EVIDENTLY_URL"])
