@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from recommender.config import SERVICES, VIEWERS
+from recommender.config import PAGE_SIZE, SERVICES, VIEWERS
 from recommender.core.foldin import fold_in, genre_prior
 from recommender.core.rank import recommend
 from recommender.core.state import CoupleState, Event, replay
@@ -229,11 +229,11 @@ def create_app(store: Store) -> FastAPI:
         return {"ok": True}
 
     @app.get("/api/recommendations")
-    def recommendations() -> list[dict]:
+    def recommendations(offset: int = Query(0, ge=0), limit: int = Query(PAGE_SIZE, ge=1, le=100)) -> list[dict]:
         # Refold on a catalog change and push before reading, so the store serves the vectors just folded
         with couple.session():
             cat, state = couple.current(), couple.state
-        return recommend(cat.df, cat.global_bias, couple.tastes(), state)
+        return recommend(cat.df, cat.global_bias, couple.tastes(), state, offset=offset, limit=limit)
 
     app.mount("/", StaticFiles(directory=WEB, html=True), name="web")
     return app

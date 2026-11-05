@@ -1,4 +1,4 @@
-# Couple-level ranking: per-viewer like probability, veto, gamble refill and reasons
+# Couple-level ranking: per-viewer like probability, veto, newest-first picks, popular fallback and reasons
 from __future__ import annotations
 
 import numpy as np
@@ -6,8 +6,8 @@ import pandas as pd
 
 from datetime import datetime, timedelta, timezone
 
-from recommender.config import (KOREAN_BONUS, MAX_RESULTS, MIN_PER_SERVICE, MIN_RESULTS, RECENCY_BONUS, RECENCY_YEARS, SERVICES,
-                                STRONG_DISLIKE_P, VETO_P, VIEWERS)
+from recommender.config import (KOREAN_BONUS, RECENCY_BONUS, RECENCY_YEARS, SERVICES, STRONG_DISLIKE_P, VETO_P,
+                                VIEWERS)
 from recommender.core.state import CoupleState
 from recommender.genres import KOREAN_LABEL
 
@@ -53,8 +53,14 @@ def _sigmoid(x: np.ndarray) -> np.ndarray:
 
 def recommend(
     catalog: pd.DataFrame, global_bias: float, taste: dict[str, np.ndarray | None], couple: CoupleState,
-    this_year: int | None = None,
+    this_year: int | None = None, offset: int = 0, limit: int | None = None,
 ) -> list[dict]:
+    """One page of the couple's list: the picks newest release year first, then the popular fallback.
+
+    Picks pass the veto and are ordered by release year (unknown last), then by score within a year. After
+    them come the movies the veto caught, most popular in Korea first, minus any that a viewer strongly
+    dislikes. Only the requested slice is turned into entries.
+    """
     n = len(catalog)
     if n == 0:
         return []
@@ -90,11 +96,11 @@ def recommend(
 
     low = np.minimum(probs["me"], probs["wife"])
     cold = not any(vs.liked or vs.disliked or vs.genres for vs in couple.viewers.values())
-    score = catalog["popularity_kr"].to_numpy(dtype=np.float64) if cold else low
+    popularity = catalog["popularity_kr"].to_numpy(dtype=np.float64)
+    score = popularity if cold else low
     if "release_year" in catalog:
-        # Recent releases move up the list, weighted by how much they are watched in Korea so that a
+        # Within a year, recent releases are weighted by how much they are watched in Korea so that a
         # recent hit outranks an obscure new title; the veto below still uses the raw probabilities
-        popularity = catalog["popularity_kr"].to_numpy(dtype=np.float64)
         score = score + RECENCY_BONUS * recency(catalog["release_year"], this_year or this_year_kst()) * popularity
     if "korean" in catalog:
         score = score + KOREAN_BONUS * catalog["korean"].to_numpy(dtype=np.float64)
@@ -104,37 +110,23 @@ def recommend(
     for vid in VIEWERS:
         if has_taste[vid] or not cold:
             veto |= probs[vid] < VETO_P
-    survivors = np.flatnonzero(eligible & ~veto)
-    survivors = survivors[np.argsort(-score[survivors], kind="stable")]
-    picked = [(int(i), False) for i in _with_service_places(survivors, catalog["services"].tolist(), score)]
+    years = (pd.array(catalog["release_year"], dtype="Int64").to_numpy(dtype="float64", na_value=-np.inf)
+             if "release_year" in catalog else np.full(n, -np.inf))
+    picks = np.flatnonzero(eligible & ~veto)
+    picks = picks[np.lexsort((-score[picks], -years[picks]))]
 
-    if len(picked) < MIN_RESULTS:
-        floor = np.ones(n, dtype=bool)
-        for vid in VIEWERS:
-            if has_taste[vid] or not cold:
-                floor &= probs[vid] >= STRONG_DISLIKE_P
-        gamble_mask = eligible & veto & floor
-        pool = np.flatnonzero(gamble_mask)
-        pool = pool[np.argsort(-score[pool], kind="stable")][: MIN_RESULTS - len(picked)]
-        picked += [(int(i), True) for i in pool]
+    floor = np.ones(n, dtype=bool)
+    for vid in VIEWERS:
+        if has_taste[vid] or not cold:
+            floor &= probs[vid] >= STRONG_DISLIKE_P
+    popular = np.flatnonzero(eligible & veto & floor)
+    popular = popular[np.argsort(-popularity[popular], kind="stable")]
 
+    order = [(int(i), "pick") for i in picks] + [(int(i), "popular") for i in popular]
+    end = None if limit is None else offset + limit
     return [
-        _entry(catalog, i, g, probs, unit, key_row, couple, genres[i]) for i, g in picked
+        _entry(catalog, i, src, probs, unit, key_row, couple, genres[i]) for i, src in order[offset:end]
     ]
-
-
-def _with_service_places(ranked: np.ndarray, services: list, score: np.ndarray) -> list[int]:
-    """The top MAX_RESULTS of `ranked`, after first reserving MIN_PER_SERVICE places for each service."""
-    chosen: list[int] = []
-    for svc in SERVICES:
-        on_svc = [int(i) for i in ranked if svc in services[i] and int(i) not in chosen]
-        chosen += on_svc[:MIN_PER_SERVICE]
-    for i in ranked:
-        if len(chosen) >= MAX_RESULTS:
-            break
-        if int(i) not in chosen:
-            chosen.append(int(i))
-    return sorted(chosen[:MAX_RESULTS], key=lambda i: -score[i])
 
 
 def _nearest(unit: np.ndarray, row: int, liked_keys, key_row: dict) -> int | None:
@@ -147,7 +139,7 @@ def _nearest(unit: np.ndarray, row: int, liked_keys, key_row: dict) -> int | Non
     return rows[best] if cos[best] >= _REASON_MIN_COS else None
 
 
-def _entry(catalog, i, gamble, probs, unit, key_row, couple, cand_genres) -> dict:
+def _entry(catalog, i, source, probs, unit, key_row, couple, cand_genres) -> dict:
     row = catalog.iloc[i]
     p_me, p_wife = float(probs["me"][i]), float(probs["wife"][i])
     pv = {"me": p_me, "wife": p_wife}
@@ -177,6 +169,6 @@ def _entry(catalog, i, gamble, probs, unit, key_row, couple, cand_genres) -> dic
         "new_this_week": bool(row["new_this_week"]),
         "p_me": p_me,
         "p_wife": p_wife,
-        "gamble": gamble,
+        "source": source,
         "reason": reason,
     }

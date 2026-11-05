@@ -118,7 +118,7 @@ def test_mark_changes_the_next_recommendations():
     assert after.index("a2") < before.index("a2")
     rec = c.get("/api/recommendations").json()[0]
     assert set(rec) == {"movie_key", "title", "poster_url", "services", "new_this_week",
-                        "p_me", "p_wife", "gamble", "reason"}
+                        "p_me", "p_wife", "source", "reason"}
 
 
 def test_mark_appends_an_event_and_pushes_only_that_viewers_new_taste():
@@ -238,6 +238,22 @@ def test_a_mark_is_pushed_and_then_read_back_for_the_next_recommendations():
     after = _p(c, "wife")
     assert "wife" in store.reads
     assert after["d"] < before["d"]  # d leans toward b, which she now dislikes
+
+
+def test_recommendations_page_through_the_picks_then_the_popular_fallback():
+    store = MemStore()
+    c = _client(store)
+    c.post("/api/viewer/wife/genres", json={"genres": ["drama"]})
+    c.post("/api/mark", json={"viewer": "me", "movie_key": "e", "liked": True, "source": "onboarding"})
+    c.post("/api/watched", json={"movie_key": "a2"})
+    # Feast says "me" leans away from b's direction: b falls below the strong-dislike floor, c and d below the veto
+    store.online["me"] = np.array([0.0, -1.0], np.float32)
+    pages = [c.get("/api/recommendations", params={"offset": o, "limit": 3}).json() for o in (0, 3, 6)]
+    assert [[(r["movie_key"], r["source"]) for r in p] for p in pages] == [
+        [("a", "pick"), ("f", "pick"), ("c", "popular")], [("d", "popular")], []]
+    # The marked, the watched and the strongly disliked never appear, as picks or as popular movies
+    assert {r["movie_key"] for p in pages for r in p}.isdisjoint({"e", "a2", "b"})
+    assert c.get("/api/recommendations", params={"limit": 0}).status_code == 422
 
 
 class BrokenReadStore(MemStore):

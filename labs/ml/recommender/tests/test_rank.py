@@ -1,4 +1,4 @@
-# Tests for couple ranking, veto, gamble refill and reasons
+# Tests for couple ranking, veto, newest-first picks, the popular fallback, paging and reasons
 import numpy as np
 import pandas as pd
 
@@ -45,8 +45,8 @@ def _warm():
 
 def test_veto_drops_movie_one_dislikes():
     out = recommend(_cat([("a", 0.9, 0.3), ("b", 0.8, 0.8)]), 0.0, TASTE, _warm())
-    assert [r["movie_key"] for r in out if not r["gamble"]] == ["b"]
-    assert all(r["gamble"] for r in out if r["movie_key"] == "a")
+    assert [r["movie_key"] for r in out if r["source"] == "pick"] == ["b"]
+    assert all(r["source"] == "popular" for r in out if r["movie_key"] == "a")
     out = recommend(_cat([("z", 0.9, 0.1), ("b", 0.8, 0.8)]), 0.0, TASTE, _warm())
     assert [r["movie_key"] for r in out] == ["b"]
 
@@ -56,19 +56,25 @@ def test_rank_by_lower_score():
     assert [r["movie_key"] for r in out] == ["b", "a"]
 
 
-def test_gamble_refill_to_five():
-    rows = [("s1", 0.9, 0.9), ("s2", 0.8, 0.8), ("s3", 0.7, 0.7)]
-    rows += [(f"g{i}", 0.9, 0.25 + i * 0.02) for i in range(4)] + [("x", 0.9, 0.1)]
+def test_popular_fallback_follows_the_picks_by_popularity_and_drops_strong_dislikes():
+    rows = [("s1", 0.9, 0.9, 0.1), ("s2", 0.8, 0.8, 0.2), ("s3", 0.7, 0.7, 0.3)]
+    rows += [(f"g{i}", 0.9, 0.25 + i * 0.02, 0.4 + i * 0.1) for i in range(4)] + [("x", 0.9, 0.1, 1.0)]
     out = recommend(_cat(rows), 0.0, TASTE, _warm())
-    assert len(out) == 5
-    assert [r["gamble"] for r in out] == [False] * 3 + [True] * 2
-    assert "x" not in [r["movie_key"] for r in out]
-    assert [r["movie_key"] for r in out[3:]] == ["g3", "g2"]
+    assert [r["source"] for r in out] == ["pick"] * 3 + ["popular"] * 4
+    # Picks keep their score order; the fallback goes by Korean popularity, not by score
+    assert [r["movie_key"] for r in out] == ["s1", "s2", "s3", "g3", "g2", "g1", "g0"]
+    assert "x" not in [r["movie_key"] for r in out]  # 0.1 is below STRONG_DISLIKE_P, even as a popular movie
 
 
-def test_never_more_than_ten():
-    out = recommend(_cat([(f"m{i}", 0.9, 0.9) for i in range(30)]), 0.0, TASTE, _warm())
-    assert len(out) == 10
+def test_pages_are_slices_of_one_list_across_the_fallback_boundary():
+    rows = [(f"p{i}", 0.9, 0.9) for i in range(5)] + [(f"v{i}", 0.9, 0.3, 0.9 - i * 0.1) for i in range(4)]
+    cat, c = _cat(rows), _warm()
+    full = [r["movie_key"] for r in recommend(cat, 0.0, TASTE, c)]
+    assert len(full) == 9
+    pages = [[r["movie_key"] for r in recommend(cat, 0.0, TASTE, c, offset=o, limit=4)] for o in (0, 4, 8, 12)]
+    assert pages[0] + pages[1] + pages[2] == full
+    assert [len(p) for p in pages] == [4, 4, 1, 0]
+    assert [r["source"] for r in recommend(cat, 0.0, TASTE, c, offset=4, limit=2)] == ["pick", "popular"]
 
 
 def test_excludes_marked_and_watched():
@@ -121,8 +127,8 @@ def test_dislike_penalty_vetoes_near_neighbour():
     c = _couple(disliked={"bad"})
     out = recommend(cat, 0.0, taste, c)
     near = [r for r in out if r["movie_key"] == "near"]
-    assert near and near[0]["gamble"] and near[0]["p_me"] < 0.35
-    assert not [r for r in out if r["movie_key"] == "far"][0]["gamble"]
+    assert near and near[0]["source"] == "popular" and near[0]["p_me"] < 0.35
+    assert [r for r in out if r["movie_key"] == "far"][0]["source"] == "pick"
 
 
 def test_genre_bonus_moves_movie_up():
@@ -165,9 +171,9 @@ def test_recency_bonus_lifts_recent_movies_without_weakening_the_veto():
     cat = _cat([("old", 0.80, 0.80), ("new", 0.72, 0.72), ("bad_new", 0.90, 0.30)])
     cat["release_year"] = pd.array([1995, 2026, 2026], dtype="Int64")
     out = recommend(cat, 0.0, TASTE, _warm(), this_year=2026)
-    assert [r["movie_key"] for r in out if not r["gamble"]] == ["new", "old"]
-    # The bonus only reorders survivors; a movie one viewer dislikes still never ranks as a normal pick
-    assert all(r["gamble"] for r in out if r["movie_key"] == "bad_new")
+    assert [r["movie_key"] for r in out if r["source"] == "pick"] == ["new", "old"]
+    # Recency only orders the picks; a movie one viewer dislikes is still never a pick
+    assert all(r["source"] == "popular" for r in out if r["movie_key"] == "bad_new")
 
 
 def test_recency_fades_over_five_years_and_ignores_missing_years():
@@ -178,30 +184,23 @@ def test_recency_fades_over_five_years_and_ignores_missing_years():
 
 
 def test_recency_bonus_favours_recent_movies_people_actually_watch():
-    # Same predicted taste; the popular recent one gets the full bonus, the obscure one almost none
+    # Same year and predicted taste: the popular one gets the full bonus, the obscure one almost none
     cat = _cat([("obscure", 0.70, 0.70, 0.05), ("old", 0.75, 0.75, 0.9), ("hit", 0.70, 0.70, 1.0)])
     cat["release_year"] = pd.array([2026, 2000, 2026], dtype="Int64")
     out = recommend(cat, 0.0, TASTE, _warm(), this_year=2026)
-    assert [r["movie_key"] for r in out] == ["hit", "old", "obscure"]
+    assert [r["movie_key"] for r in out] == ["hit", "obscure", "old"]
 
 
-def test_each_service_keeps_two_places_when_it_has_acceptable_movies():
-    rows = [(f"n{i}", 0.9, 0.9) for i in range(10)] + [("d1", 0.6, 0.6), ("d2", 0.55, 0.55), ("d3", 0.5, 0.5),
-                                                       ("c1", 0.5, 0.5), ("cbad", 0.9, 0.2)]
-    cat = _cat(rows)
-    cat["services"] = [["nfx"]] * 10 + [["dnp"]] * 3 + [["cou"]] * 2
-    out = recommend(cat, 0.0, TASTE, _warm())
-    keys = [r["movie_key"] for r in out]
-    assert len(keys) == 10
-    assert {"d1", "d2"} <= set(keys) and "d3" not in keys
-    assert "c1" in keys and "cbad" not in keys  # a vetoed movie never takes a reserved place
-    low = [min(r["p_me"], r["p_wife"]) for r in out]
-    assert low == sorted(low, reverse=True)  # reserved places still appear in score order
+def test_picks_go_newest_year_first_then_by_score_with_unknown_years_last():
+    cat = _cat([("y20_lo", 0.6, 0.6), ("none", 0.95, 0.95), ("y24", 0.5, 0.5), ("y20_hi", 0.9, 0.9)])
+    cat["release_year"] = pd.array([2020, None, 2024, 2020], dtype="Int64")
+    out = recommend(cat, 0.0, TASTE, _warm(), this_year=2026)
+    assert [r["movie_key"] for r in out] == ["y24", "y20_hi", "y20_lo", "none"]
 
 
 def test_korean_bonus_moves_korean_movies_up_without_weakening_the_veto():
     cat = _cat([("foreign", 0.80, 0.80), ("korean", 0.74, 0.74), ("korean_bad", 0.90, 0.30)])
     cat["korean"] = [False, True, True]
     out = recommend(cat, 0.0, TASTE, _warm())
-    assert [r["movie_key"] for r in out if not r["gamble"]] == ["korean", "foreign"]
-    assert all(r["gamble"] for r in out if r["movie_key"] == "korean_bad")
+    assert [r["movie_key"] for r in out if r["source"] == "pick"] == ["korean", "foreign"]
+    assert all(r["source"] == "popular" for r in out if r["movie_key"] == "korean_bad")
