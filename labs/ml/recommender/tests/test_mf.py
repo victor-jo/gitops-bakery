@@ -161,3 +161,57 @@ def test_split_all_without_couple_rows():
                        "label": np.float32(1)})
     train_df, val, test = split_all(ml, {"me": 10, "wife": 11})
     assert (len(train_df), len(val), len(test)) == (75, 15, 10)
+
+
+def _genre_world(n_users=60, n_items=60, unseen=10, seed=0):
+    """Half the users like genre A, half genre B; the last `unseen` items have no training rows.
+
+    Returns (train rows, item features with a one-hot genre column pair, user group, item genre).
+    """
+    rng = np.random.default_rng(seed)
+    user_group = np.arange(n_users) % 2
+    item_genre = np.arange(n_items) % 2
+    users, items = np.meshgrid(np.arange(n_users), np.arange(n_items - unseen), indexing="ij")
+    users, items = users.ravel(), items.ravel()
+    keep = rng.random(len(users)) < 0.5
+    users, items = users[keep], items[keep]
+    df = pd.DataFrame({"user_idx": users.astype(np.int32), "item_idx": items.astype(np.int32),
+                       "label": (user_group[users] == item_genre[items]).astype(np.float32)})
+    features = np.eye(2, dtype=np.float32)[item_genre]
+    return df, features, user_group, item_genre
+
+
+def test_default_train_is_the_plain_mf():
+    from recommender.model.mf import MF
+
+    df, _, _, _ = _genre_world()
+    model = train(df, 60, 60, epochs=1)
+    assert type(model) is MF
+    np.testing.assert_array_equal(export(model)["item_vecs"], model.item_emb.weight.detach().numpy())
+
+
+def test_hybrid_export_scores_like_predict_so_fold_in_sees_the_same_model():
+    from recommender.model.mf import HybridMF
+
+    df, features, _, _ = _genre_world()
+    model = train(df, 60, 60, epochs=3, item_features=features)
+    assert isinstance(model, HybridMF)
+    exp = export(model)
+    assert exp["item_vecs"].shape == (60, 32) and exp["item_bias"].shape == (60,)
+    u, i = np.repeat(np.arange(60), 60), np.tile(np.arange(60), 60)
+    logit = ((exp["user_vecs"][u] * exp["item_vecs"][i]).sum(1) + exp["user_bias"][u]
+             + exp["item_bias"][i] + exp["global_bias"])
+    np.testing.assert_allclose(1 / (1 + np.exp(-logit)), predict(model, u, i), atol=1e-5)
+
+
+def test_hybrid_scores_items_without_training_rows_from_their_features():
+    df, features, user_group, item_genre = _genre_world()
+    unseen = np.arange(50, 60)
+    u, i = np.repeat(np.arange(60), len(unseen)), np.tile(unseen, 60)
+    truth = (user_group[u] == item_genre[i]).astype(float)
+
+    hybrid = train(df, 60, 60, epochs=40, item_features=features)
+    plain = train(df, 60, 60, epochs=40)
+    # The plain MF never saw these items, so their vectors are still the random start
+    assert auc(truth, predict(hybrid, u, i)) >= 0.95
+    assert auc(truth, predict(plain, u, i)) < 0.8

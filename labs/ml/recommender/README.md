@@ -80,6 +80,33 @@ The container reaches Garage and Valkey through two Mac-side port-forwards. `ser
 
 **Picks show but 👍/👎 fails → run `serving/tunnels.sh`.** Picks fall back to the in-memory tastes when Valkey is unreachable, but every mark is written to Garage, so a dead tunnel shows up first as a failing mark (and as `taste of <viewer> comes from memory` warnings in the container log).
 
+## Model: plain MF or hybrid
+
+The training step takes `model_type`. The default, `mf`, learns from ids alone: genres, release year, the Korean flag and popularity reach the picks only as ranking rules after scoring. `hybrid` feeds them into the model:
+
+```
+item_vec[i]  = item_emb[i]  + W f[i]
+item_bias[i] = item_bias[i] + w · f[i]
+logit(u, i)  = user_vec[u] · item_vec[i] + user_bias[u] + item_bias[i] + global_bias
+```
+
+`f[i]` is fixed per MovieLens movie (`recommender/model/item_features.py`):
+
+| Feature | Columns | Source |
+|---|---|---|
+| Genres | 20, multi-hot | MovieLens genres mapped to the shared vocabulary |
+| Release decade | 14, one-hot (1900s–2020s, unknown) | the year at the end of the MovieLens title, bucketed as the content model does |
+| Korean | 1 | today's catalog (Hangul original title); MovieLens has no language, so only MovieLens movies in the catalog can carry it (388 on 2026-11-05) |
+| Popularity | 1 | `log1p` of the movie's training rows, standardized; held-out rows are not counted |
+
+`W` and `w` start at zero, so training begins from the plain MF and learns what the features add. The loss, optimizer, epochs and seed are the MF's. The score stays linear in the user vector. `export` writes the summed vectors and biases to `arrays.npz` in the MF layout, so the gate, the fold-in, the content model that places catalog movies and the service read a hybrid run unchanged.
+
+```bash
+.venv-rec/bin/python pipeline/run.py training --model-type hybrid    # KFP parameter model_type, default mf
+```
+
+The component now passes `model_type` to `steps.train`, so a pipeline compiled from this code needs a pipeline image built from it too. Each run logs `model_type` as an MLflow parameter. The hybrid is an experiment and has not been promoted. Its numbers against the champion are in `BLOG_NOTES.md`.
+
 ## Schedules
 
 Each pipeline takes `--schedule` to create a KFP recurring run instead of a single run:

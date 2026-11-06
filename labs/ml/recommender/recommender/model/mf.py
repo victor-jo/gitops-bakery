@@ -23,17 +23,46 @@ class MF(nn.Module):
         nn.init.zeros_(self.user_bias.weight)
         nn.init.zeros_(self.item_bias.weight)
 
+    def item_terms(self, i: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Vector and bias of items i."""
+        return self.item_emb(i), self.item_bias(i).squeeze(-1)
+
     def forward(self, u: torch.Tensor, i: torch.Tensor) -> torch.Tensor:
-        dot = (self.user_emb(u) * self.item_emb(i)).sum(-1)
-        return dot + self.user_bias(u).squeeze(-1) + self.item_bias(i).squeeze(-1) + self.global_bias
+        item_vec, item_bias = self.item_terms(i)
+        dot = (self.user_emb(u) * item_vec).sum(-1)
+        return dot + self.user_bias(u).squeeze(-1) + item_bias + self.global_bias
+
+
+class HybridMF(MF):
+    """MF whose item vector and bias add a learned linear map of fixed item features to the id terms.
+
+    item_vec[i] = item_emb[i] + W f[i] and item_bias[i] = b[i] + w . f[i]; the score stays linear in the
+    user vector, so a viewer folds in against the exported item vectors exactly as with the plain MF.
+    """
+
+    def __init__(self, n_users: int, n_items: int, features: np.ndarray, dim: int = 32):
+        super().__init__(n_users, n_items, dim)
+        self.register_buffer("features", torch.as_tensor(features, dtype=torch.float32))
+        self.feature_vec = nn.Linear(features.shape[1], dim, bias=False)
+        self.feature_bias = nn.Linear(features.shape[1], 1, bias=False)
+        # Zero start: training begins from the plain MF and learns what the features add
+        nn.init.zeros_(self.feature_vec.weight)
+        nn.init.zeros_(self.feature_bias.weight)
+
+    def item_terms(self, i: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        item_vec, item_bias = super().item_terms(i)
+        f = self.features[i]
+        return item_vec + self.feature_vec(f), item_bias + self.feature_bias(f).squeeze(-1)
 
 
 def train(
     df: pd.DataFrame, n_users: int, n_items: int, dim: int = 32, epochs: int = 5,
     batch: int = 65536, lr: float = 0.01, weight_decay: float = 1e-5,
+    item_features: np.ndarray | None = None,
 ) -> MF:
+    """Fit by BCE on (user_idx, item_idx, label) rows; item_features (one row per item) trains a HybridMF."""
     torch.manual_seed(0)
-    model = MF(n_users, n_items, dim)
+    model = MF(n_users, n_items, dim) if item_features is None else HybridMF(n_users, n_items, item_features, dim)
     u = torch.from_numpy(df["user_idx"].to_numpy())
     i = torch.from_numpy(df["item_idx"].to_numpy())
     y = torch.from_numpy(df["label"].to_numpy(dtype="float32"))
@@ -64,13 +93,18 @@ def predict(model: MF, user_idx, item_idx) -> np.ndarray:
 
 
 def export(model: MF) -> dict:
-    """Float32 numpy parameters so scoring needs no torch at serving time."""
+    """Float32 numpy parameters so scoring needs no torch at serving time.
+
+    A HybridMF exports its full item vectors and biases (id plus feature terms), so the layout is the same.
+    """
     def arr(t: torch.Tensor) -> np.ndarray:
         return t.detach().cpu().numpy().astype(np.float32)
 
+    with torch.no_grad():
+        item_vecs, item_bias = model.item_terms(torch.arange(model.item_emb.num_embeddings))
     return {
-        "item_vecs": arr(model.item_emb.weight),
-        "item_bias": arr(model.item_bias.weight).reshape(-1),
+        "item_vecs": arr(item_vecs),
+        "item_bias": arr(item_bias),
         "global_bias": float(model.global_bias.item()),
         "user_vecs": arr(model.user_emb.weight),
         "user_bias": arr(model.user_bias.weight).reshape(-1),
