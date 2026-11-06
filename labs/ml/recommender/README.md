@@ -82,7 +82,7 @@ The container reaches Garage and Valkey through two Mac-side port-forwards. `ser
 
 ## Model: plain MF or hybrid
 
-The training step takes `model_type`. The default, `mf`, learns from ids alone: genres, release year, the Korean flag and popularity reach the picks only as ranking rules after scoring. `hybrid` feeds them into the model:
+The training step takes `model_type`. The default is `hybrid`, which feeds genres, release decade, the Korean flag and popularity into the model. `mf` remains as an explicit option: it learns from ids alone, so those signals reach the picks only as ranking rules after scoring. The hybrid model:
 
 ```
 item_vec[i]  = item_emb[i]  + W f[i]
@@ -102,10 +102,11 @@ logit(u, i)  = user_vec[u] · item_vec[i] + user_bias[u] + item_bias[i] + global
 `W` and `w` start at zero, so training begins from the plain MF and learns what the features add. The loss, optimizer, epochs and seed are the MF's. The score stays linear in the user vector. `export` writes the summed vectors and biases to `arrays.npz` in the MF layout, so the gate, the fold-in, the content model that places catalog movies and the service read a hybrid run unchanged.
 
 ```bash
-.venv-rec/bin/python pipeline/run.py training --model-type hybrid    # KFP parameter model_type, default mf
+.venv-rec/bin/python pipeline/run.py training                    # hybrid, the default (KFP parameter model_type)
+.venv-rec/bin/python pipeline/run.py training --model-type mf    # plain MF
 ```
 
-The component now passes `model_type` to `steps.train`, so a pipeline compiled from this code needs a pipeline image built from it too. Each run logs `model_type` as an MLflow parameter. The hybrid is an experiment and has not been promoted. Its numbers against the champion are in `BLOG_NOTES.md`.
+The component now passes `model_type` to `steps.train`, so a pipeline compiled from this code needs a pipeline image built from it too. Each run logs `model_type` as an MLflow parameter. The deployed pipeline image and the lab's recurring training run still predate this option, so they train the plain MF until the image is rebuilt and the run is rescheduled. A hybrid champion exists only after such a run passes the gate. The hybrid's numbers against the MF champion are in `BLOG_NOTES.md`.
 
 ## Schedules
 

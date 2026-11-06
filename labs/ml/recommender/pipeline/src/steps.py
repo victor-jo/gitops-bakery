@@ -188,7 +188,7 @@ def _sample(ratings: pd.DataFrame, sample_users: int) -> pd.DataFrame:
     return ratings[ratings["userId"].isin(users)].reset_index(drop=True)
 
 
-def train(epochs: int, sample_users: int, dim: int, holdout_path: str, model_type: str = "mf") -> str:
+def train(epochs: int, sample_users: int, dim: int, holdout_path: str, model_type: str = "hybrid") -> str:
     """Train the MF on MovieLens plus the couple, fit the content model and log both to a new MLflow run."""
     import mlflow
 

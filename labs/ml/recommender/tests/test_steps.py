@@ -265,10 +265,10 @@ def test_train_logs_the_model_type_and_keeps_the_mf_array_layout(tmp_path, monke
         assert seen["item_features"][:, -2].tolist() == [0.0, 1.0, 0.0, 0.0]  # movie 20 is Korean
 
 
-def test_train_default_is_the_plain_mf(tmp_path, monkeypatch):
+def test_train_default_is_the_hybrid(tmp_path, monkeypatch):
     seen = _fake_training(monkeypatch)
     steps.train(1, 0, 4, str(tmp_path / "holdout.parquet"))
-    assert seen["params"]["model_type"] == "mf" and seen["item_features"] is None
+    assert seen["params"]["model_type"] == "hybrid" and seen["item_features"] is not None
 
 
 def test_unknown_model_type_is_refused_before_any_work(monkeypatch):

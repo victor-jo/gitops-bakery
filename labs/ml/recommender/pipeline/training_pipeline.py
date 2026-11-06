@@ -16,7 +16,7 @@ def movie_recommender_training(
     sample_users: int = 0,
     dim: int = 32,
     # "hybrid" also feeds genres, decade, Korean flag and rating count into each item vector
-    model_type: str = "mf",
+    model_type: str = "hybrid",
 ):
     ml = wire(prepare_movielens(), memory="6Gi")
     trained = wire(train(epochs=epochs, sample_users=sample_users, dim=dim, model_type=model_type), cpu="4", memory="8Gi").after(ml)
