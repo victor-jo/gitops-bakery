@@ -17,9 +17,12 @@ def movie_recommender_training(
     dim: int = 32,
     # "hybrid" also feeds genres, decade, Korean flag and rating count into each item vector
     model_type: str = "hybrid",
+    # Adam's L2 on the embeddings; 0 keeps the item vectors from collapsing onto one axis
+    weight_decay: float = 0.0,
 ):
     ml = wire(prepare_movielens(), memory="6Gi")
-    trained = wire(train(epochs=epochs, sample_users=sample_users, dim=dim, model_type=model_type), cpu="4", memory="8Gi").after(ml)
+    trained = wire(train(epochs=epochs, sample_users=sample_users, dim=dim, model_type=model_type,
+                         weight_decay=weight_decay), cpu="4", memory="8Gi").after(ml)
     gated = wire(evaluate_and_gate(run_id=trained.outputs["Output"], holdout=trained.outputs["holdout"]),
                  cpu="2", memory="6Gi")
     wire(place_catalog(), memory="2Gi").after(gated)

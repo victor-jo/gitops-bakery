@@ -57,7 +57,8 @@ class HybridMF(MF):
 
 def train(
     df: pd.DataFrame, n_users: int, n_items: int, dim: int = 32, epochs: int = 5,
-    batch: int = 65536, lr: float = 0.01, weight_decay: float = 1e-5,
+    # No L2 by default: Adam's weight decay pulled the item vectors onto one popularity axis
+    batch: int = 65536, lr: float = 0.01, weight_decay: float = 0.0,
     item_features: np.ndarray | None = None,
 ) -> MF:
     """Fit by BCE on (user_idx, item_idx, label) rows; item_features (one row per item) trains a HybridMF."""

@@ -129,3 +129,8 @@ def test_schedule_recurring_keeps_old_runs_when_create_fails():
 def test_training_model_type_defaults_to_the_hybrid(tmp_path):
     spec = _compile(movie_recommender_training, tmp_path / "t.yaml")[0]
     assert spec["root"]["inputDefinitions"]["parameters"]["model_type"]["defaultValue"] == "hybrid"
+
+
+def test_training_weight_decay_defaults_to_zero(tmp_path):
+    spec = _compile(movie_recommender_training, tmp_path / "t.yaml")[0]
+    assert spec["root"]["inputDefinitions"]["parameters"]["weight_decay"]["defaultValue"] == 0.0

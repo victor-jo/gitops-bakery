@@ -188,7 +188,8 @@ def _sample(ratings: pd.DataFrame, sample_users: int) -> pd.DataFrame:
     return ratings[ratings["userId"].isin(users)].reset_index(drop=True)
 
 
-def train(epochs: int, sample_users: int, dim: int, holdout_path: str, model_type: str = "hybrid") -> str:
+def train(epochs: int, sample_users: int, dim: int, holdout_path: str, model_type: str = "hybrid",
+          weight_decay: float = 0.0) -> str:
     """Train the MF on MovieLens plus the couple, fit the content model and log both to a new MLflow run."""
     import mlflow
 
@@ -220,7 +221,8 @@ def train(epochs: int, sample_users: int, dim: int, holdout_path: str, model_typ
         from recommender.model.item_features import item_features
 
         features = item_features(item_index, s3.read_parquet(MOVIELENS["movies"]), catalog, train_rows)
-    model = mf.train(train_rows, n_users, n_items, dim=dim, epochs=epochs, item_features=features)
+    model = mf.train(train_rows, n_users, n_items, dim=dim, epochs=epochs, weight_decay=weight_decay,
+                     item_features=features)
     arrays = mf.export(model)
     content = fit_content_model(catalog, arrays["item_vecs"], arrays["item_bias"], item_index)
     train_s = time.time() - started
@@ -231,7 +233,7 @@ def train(epochs: int, sample_users: int, dim: int, holdout_path: str, model_typ
     mlflow.set_experiment(MODEL_NAME)
     with mlflow.start_run() as run, tempfile.TemporaryDirectory() as tmp:
         mlflow.log_params({"epochs": epochs, "sample_users": sample_users, "dim": dim,
-                           "model_type": model_type, "train_rows": len(train_rows), "n_users": n_users,
+                           "model_type": model_type, "weight_decay": weight_decay, "train_rows": len(train_rows), "n_users": n_users,
                            "n_items": n_items, "couple_rows": len(couple)})
         mlflow.log_metric("train_seconds", train_s)
         np.savez(os.path.join(tmp, "arrays.npz"), **arrays, user_ids=user_ids,

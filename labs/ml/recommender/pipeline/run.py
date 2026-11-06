@@ -23,6 +23,7 @@ parser.add_argument("--epochs", type=int, default=5, help="training: MF epochs")
 parser.add_argument("--sample-users", type=int, default=0, help="training: MovieLens users to sample (0 = all)")
 parser.add_argument("--model-type", choices=["mf", "hybrid"], default="hybrid",
                     help="training: hybrid with item features in the item vectors (default), or plain MF on ids")
+parser.add_argument("--weight-decay", type=float, default=0.0, help="training: Adam weight decay (0 = none)")
 parser.add_argument("--schedule", action="store_true", help="create (or replace) the recurring run instead of one run: catalog daily 05:00 KST, training daily 06:00 KST, monitoring Monday 07:00 KST")
 parser.add_argument("--no-wait", action="store_true", help="submit and exit without waiting for the run")
 args = parser.parse_args()
@@ -33,7 +34,8 @@ elif args.pipeline == "monitoring":
     pipeline, name, arguments = movie_recommender_monitoring, "movie-recommender-monitoring", {}
 else:
     pipeline, name = movie_recommender_training, "movie-recommender-training"
-    arguments = {"epochs": args.epochs, "sample_users": args.sample_users, "model_type": args.model_type}
+    arguments = {"epochs": args.epochs, "sample_users": args.sample_users, "model_type": args.model_type,
+                 "weight_decay": args.weight_decay}
 
 package = Path(__file__).with_name(f"{name.replace('-', '_')}.yaml")
 compiler.Compiler().compile(pipeline, str(package))

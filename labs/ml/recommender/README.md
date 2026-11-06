@@ -104,9 +104,19 @@ logit(u, i)  = user_vec[u] · item_vec[i] + user_bias[u] + item_bias[i] + global
 ```bash
 .venv-rec/bin/python pipeline/run.py training                    # hybrid, the default (KFP parameter model_type)
 .venv-rec/bin/python pipeline/run.py training --model-type mf    # plain MF
+.venv-rec/bin/python pipeline/run.py training --weight-decay 1e-5   # Adam L2; the default is 0 (KFP parameter weight_decay)
 ```
 
-The component now passes `model_type` to `steps.train`, so a pipeline compiled from this code needs a pipeline image built from it too. Each run logs `model_type` as an MLflow parameter. The deployed pipeline image and the lab's recurring training run still predate this option, so they train the plain MF until the image is rebuilt and the run is rescheduled. A hybrid champion exists only after such a run passes the gate. The hybrid's numbers against the MF champion are in `BLOG_NOTES.md`.
+**Weight decay is 0 by default.** Training used Adam with `weight_decay=1e-5`. That L2 pulled the MF item vectors onto one popularity axis: 97% of their variance lay on the first principal axis. The same holdout rows the gate uses (6,250,024, full ml-25m) give these numbers:
+
+| Model | weight_decay | val_auc | precision@10 | recall@10 | first-axis variance |
+|---|---|---|---|---|---|
+| MF | 1e-5 | 0.7631 | 0.4614 | 0.8316 | 97.4% |
+| MF | 0 | 0.8174 | 0.4735 | 0.8402 | 10.4% |
+| hybrid (champion v8) | 1e-5 | 0.8036 | 0.4671 | 0.8357 | 28.3% |
+| hybrid | 0 | 0.8212 | 0.4749 | 0.8415 | 10.5% |
+
+The component passes `model_type` and `weight_decay` to `steps.train`, so a pipeline compiled from this code needs a pipeline image built from it too. Each run logs both as MLflow parameters. A new champion exists only after a run passes the gate. The hybrid's first numbers against the MF champion are in `BLOG_NOTES.md`.
 
 ## Schedules
 

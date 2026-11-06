@@ -226,6 +226,7 @@ def _fake_training(monkeypatch):
 
     def spy_train(*args, **kwargs):
         seen["item_features"] = kwargs.get("item_features")
+        seen["weight_decay"] = kwargs.get("weight_decay")
         return real_train(*args, **kwargs)
 
     monkeypatch.setattr(mf, "train", spy_train)
@@ -269,6 +270,14 @@ def test_train_default_is_the_hybrid(tmp_path, monkeypatch):
     seen = _fake_training(monkeypatch)
     steps.train(1, 0, 4, str(tmp_path / "holdout.parquet"))
     assert seen["params"]["model_type"] == "hybrid" and seen["item_features"] is not None
+
+
+def test_train_weight_decay_defaults_to_none_and_can_be_set(tmp_path, monkeypatch):
+    seen = _fake_training(monkeypatch)
+    steps.train(1, 0, 4, str(tmp_path / "holdout.parquet"))
+    assert seen["weight_decay"] == 0.0 and seen["params"]["weight_decay"] == 0.0
+    steps.train(1, 0, 4, str(tmp_path / "holdout.parquet"), "mf", 1e-5)
+    assert seen["weight_decay"] == 1e-5 and seen["params"]["weight_decay"] == 1e-5
 
 
 def test_unknown_model_type_is_refused_before_any_work(monkeypatch):
